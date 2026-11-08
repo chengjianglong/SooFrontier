@@ -7,6 +7,7 @@ import { AGENTS, CATEGORIES, COUNCIL_DEFAULT_MODELS, COUNCIL_MAX_ROUNDS, COUNCIL
 import { HARVESTERS } from './harvest.mjs';
 import { LOCAL, cliPath, localModels, makeClient, makeLocalClient, withFallback } from './llm.mjs';
 import { arxivID, keyFigures, readPaper } from './net.mjs';
+import { AgentRoom } from './agentroom.mjs';
 import * as P from './prompts.mjs';
 
 const DATA_DIR = process.env.SOOFRONTIER_DATA ?? join(homedir(), '.soofrontier-web');
@@ -83,7 +84,7 @@ export class FrontierStore extends EventEmitter {
       keys: s.keys ?? {}, models: s.models ?? {}, modes: s.modes ?? {}, cliModels: s.cliModels ?? {},
       synthesizerProvider: s.synthesizerProvider ?? 'anthropic', skepticProvider: s.skepticProvider ?? 'openai',
       agentsOff: s.agentsOff ?? [], saved: s.saved ?? [], voices: s.voices ?? VOICE_STARTERS,
-      local: { url: LOCAL.defaultURL, model: LOCAL.defaultModel, fastModel: LOCAL.defaultFastModel, prefer: false, ...s.local,
+      local: { url: LOCAL.defaultURL, model: LOCAL.defaultModel, fastModel: LOCAL.defaultFastModel, prefer: false, agentModels: {}, ...s.local,
         councilModels: { ...COUNCIL_DEFAULT_MODELS, ...s.local?.councilModels } },
     };
     const c = loadJSON('cache.json', {});
@@ -92,6 +93,18 @@ export class FrontierStore extends EventEmitter {
     this.lastRefresh = c.lastRefresh ?? null;
     this.digests = c.digests ?? {};
     this.quickReads = c.quickReads ?? {};
+    this.live = new AgentRoom({ config: () => this.liveConfig(), persist: (state) => saveJSON('live-room.json', state), saved: loadJSON('live-room.json', null) });
+  }
+
+  /** Each Brainstorm Live agent's model: the one chosen for it in Settings, else the main local model. */
+  liveConfig() {
+    const l = this.settings.local;
+    const have = this.localInstalled;
+    if (!l.url || !have) throw new Error(`Can't reach the local model server${l.url ? ` at ${l.url}` : ''}. Set it up in Settings → Local models.`);
+    if (!have.includes(l.model)) throw new Error(`The main local model ${l.model} isn't on the server. Choose one in Settings → Local models.`);
+    const models = {};
+    for (const p of PANELISTS) { const m = l.agentModels?.[p.id]; models[p.id] = m && have.includes(m) ? m : l.model; }
+    return { url: l.url, models };
   }
 
   // MARK: Providers
@@ -199,6 +212,14 @@ export class FrontierStore extends EventEmitter {
           const m = l.councilModels[seat.id];
           if (m === '') delete s.local.councilModels[seat.id];
           else if (typeof m === 'string' && m.trim()) s.local.councilModels[seat.id] = m.trim();
+        }
+      }
+      if (l.agentModels && typeof l.agentModels === 'object') {
+        // An empty value puts that agent back on the main model.
+        s.local.agentModels = { ...s.local.agentModels };
+        for (const p of PANELISTS) if (typeof l.agentModels[p.id] === 'string') {
+          const m = l.agentModels[p.id].trim();
+          if (m) s.local.agentModels[p.id] = m; else delete s.local.agentModels[p.id];
         }
       }
     }
@@ -438,20 +459,38 @@ export class FrontierStore extends EventEmitter {
 
   // MARK: Brainstorm
 
+  #panelPrompts({ panelistId, members, messages, optional, summary, useFrontier }) {
+    const panelist = PANELISTS.find((p) => p.id === panelistId);
+    if (!panelist) throw new Error('Unknown panelist');
+    return {
+      panelist, maxTokens: summary ? 3000 : 800,
+      system: P.panelSystem(panelist, members, { summary, frontier: useFrontier ? topSignals(this.items) : null }),
+      prompt: P.panelPrompt(panelist, messages, { optional, summary }),
+    };
+  }
+
+  #brainstormClient() {
+    const llm = this.localClient();
+    if (!llm) throw new Error('Brainstorm runs on your local models. Set up Local models in Settings (and download the main model).');
+    return llm;
+  }
+
   /**
    * One panelist's turn, always on the local main model (no plan or API cost, and no fallback to a provider).
    * The browser owns the room and asks for one reply at a time.
    */
-  async panelTurn({ panelistId, members, messages, optional, summary, useFrontier }, signal) {
-    const panelist = PANELISTS.find((p) => p.id === panelistId);
-    if (!panelist) throw new Error('Unknown panelist');
-    const llm = this.localClient();
-    if (!llm) throw new Error('Brainstorm runs on your local models. Set up Local models in Settings (and download the main model).');
-    const text = await llm.complete({
-      system: P.panelSystem(panelist, members, { summary, frontier: useFrontier ? topSignals(this.items) : null }),
-      prompt: P.panelPrompt(panelist, messages, { optional, summary }),
-      maxTokens: summary ? 3000 : 800, signal,
-    });
+  async panelTurn(args, signal) {
+    const { panelist, system, prompt, maxTokens } = this.#panelPrompts(args);
+    const llm = this.#brainstormClient();
+    const text = await llm.complete({ system, prompt, maxTokens, signal });
+    return { text: P.cleanReply(text, panelist.name), by: llm.label };
+  }
+
+  /** The same turn, streamed token by token. */
+  async panelTurnStream(args, onDelta, signal) {
+    const { panelist, system, prompt, maxTokens } = this.#panelPrompts(args);
+    const llm = this.#brainstormClient();
+    const text = await llm.stream({ system, prompt, maxTokens, signal, onDelta: (t) => onDelta(P.cleanReply(t, panelist.name)) });
     return { text: P.cleanReply(text, panelist.name), by: llm.label };
   }
 

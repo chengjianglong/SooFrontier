@@ -1,0 +1,24 @@
+{
+  "starters": [
+    "Will small local models replace frontier models for most companies?",
+    "Is scaling still the main driver of AI progress?",
+    "What should an AI researcher build this week?"
+  ],
+  "order": ["skeptic", "builder", "contrarian", "archivist", "synthesizer"],
+  "tuning": {
+    "windowTurns": 10,
+    "windowChars": 6000,
+    "notesEvery": 6,
+    "notesMaxChars": 1200,
+    "notesMaxTokens": 350,
+    "replyMaxTokens": 400,
+    "replyWords": [40, 90],
+    "overlapThreshold": 0.4,
+    "overlapLookback": 6,
+    "maxKeptTurns": 2000,
+    "maxFailures": 5,
+    "retryDelayMs": 3000,
+    "topicMaxChars": 500,
+    "sayMaxChars": 1000
+  }
+}

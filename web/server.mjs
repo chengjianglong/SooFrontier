@@ -130,6 +130,31 @@ const ROUTES = {
     res.end();
   },
 
+  // Brainstorm Live: a never-ending roundtable on local models. State, then a stream of changes.
+  'GET /api/live': (req, res) => sendJSON(res, 200, store.live.snapshot()),
+  'GET /api/live/stream': (req, res) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+    const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const onChange = (c) => send(c.kind, c.kind === 'turn' ? { turn: c.turn } : c.kind === 'delta' ? { speaker: c.speaker, text: c.text, model: c.model } : store.live.snapshot(0));
+    send('reset', store.live.snapshot());
+    store.live.on('change', onChange);
+    const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+    req.on('close', () => { clearInterval(ping); store.live.off('change', onChange); });
+  },
+  'POST /api/live/start': (req, res, body) => { store.live.start(body.topic); sendJSON(res, 200, {}); },
+  'POST /api/live/pause': (req, res) => { store.live.pause(); sendJSON(res, 200, {}); },
+  'POST /api/live/resume': (req, res) => { store.live.resume(); sendJSON(res, 200, {}); },
+  'POST /api/live/stop': (req, res) => { store.live.stop(); sendJSON(res, 200, {}); },
+  'POST /api/live/say': (req, res, body) => { store.live.say(body.text); sendJSON(res, 200, {}); },
+
+  // One JSON object per line: {delta} as text arrives, then {done: {text, by}} or {error}.
+  'POST /api/brainstorm/turn/stream': async (req, res, body) => {
+    res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
+    const write = (o) => res.write(JSON.stringify(o) + '\n');
+    try { write({ done: await store.panelTurnStream(body, (delta) => write({ delta }), abortOnClose(res)) }); }
+    catch (e) { write({ error: e.message }); }
+    res.end();
+  },
   'POST /api/brainstorm/turn': async (req, res, body) => sendJSON(res, 200, await store.panelTurn(body, abortOnClose(res))),
 };
 

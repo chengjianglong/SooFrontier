@@ -2,6 +2,7 @@
 import { AGENTS, CATEGORIES, COUNCIL_MAX_ROUNDS, COUNCIL_SEATS, shortModel, LOCAL_PROVIDER, PANELISTS, PROVIDERS, SECTIONS, providerInfo, VOICE_ROLES, agentColor, capitalize, futureWork, hypeWatch, itemsIn, laneOpportunities, parseStructure, quickTLDR, quickTakeaways, sentences, spokenScript, technicalDetails, topSignals, verdict, keyPoints, byScore } from './shared.js';
 import { Reader, SPEEDS } from './reader.js';
 import { Room } from './room.js';
+import { agentStrip, connectLive, live, liveView } from './live.js';
 import { api, h, icon, inline, markdown, request, store, timeAgo } from './ui.js';
 
 const main = document.getElementById('main');
@@ -468,13 +469,14 @@ function brainstormOptions() {
 function viewBrainstorm() {
   const sendDraft = () => { const t = brainstormUI.draft; brainstormUI.draft = ''; room.send(t); };
   const modeTabs = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Mode' },
-    [['chat', 'Group chat', 'brainstorm'], ['video', 'Video meeting', 'video']].map(([id, label, ic]) =>
-      h('button', { class: room.mode === id ? 'on' : '', 'aria-pressed': String(room.mode === id), onclick: () => room.setOption('mode', 'brainstorm.mode', id) }, icon(ic, 16), label)));
+    [['live', 'Live discussion', 'chart'], ['chat', 'Group chat', 'brainstorm'], ['video', 'Video meeting', 'video']].map(([id, label, ic]) =>
+      h('button', { class: room.mode === id ? 'on' : '', 'aria-pressed': String(room.mode === id), onclick: () => room.setOption('mode', 'brainstorm.mode2', id) }, icon(ic, 16), label)));
 
   const header = h('div', { class: 'brainstorm-head' }, h('div', { class: 'mode-row' }, modeTabs,
     h('button', { class: `icon-btn${brainstormUI.options ? ' on' : ''}`, 'aria-label': 'Options', 'aria-expanded': String(brainstormUI.options), onclick: () => { brainstormUI.options = !brainstormUI.options; render(); } }, icon('options'))),
-    brainstormUI.options ? brainstormOptions() : null, panelStrip());
+    brainstormUI.options && room.mode !== 'live' ? brainstormOptions() : null, room.mode === 'live' ? agentStrip(live.state) : panelStrip());
 
+  if (room.mode === 'live') return h('div', { class: 'brainstorm' }, header, liveView());
   if (room.mode === 'video') return h('div', { class: 'brainstorm video' }, header, meetingView(sendDraft));
 
   const composerInput = h('textarea', { class: 'field composer-input', rows: 1, placeholder: 'Ask the panel…', 'aria-label': 'Ask the panel', value: brainstormUI.draft,
@@ -485,7 +487,11 @@ function viewBrainstorm() {
       room.messages.length ? null : h('div', { class: 'stack' }, eyebrow('Brainstorm', 'accent'), h('h1', { class: 'display' }, 'Put a question to the whole panel.'),
         h('p', { class: 'serif muted' }, 'Name an agent to ask them directly, say “everyone” for every view, or tap the mic and talk. Open the options for Wrap up, which writes a summary.'),
         STARTERS.map((s) => h('button', { class: 'starter', onclick: () => room.send(s) }, s))),
-      room.messages.map(bubble), roomStatus())),
+      room.messages.map(bubble),
+      room.draft ? (() => { const p = PANELISTS.find((x) => x.id === room.draft.speaker);
+        return h('div', { class: 'bubble-agent chat-draft' }, h('span', { class: 'badge', style: { '--agent': agentColor(p.agent) } }, p.name[0]),
+          h('div', {}, h('div', { class: 'bubble-head' }, h('strong', {}, p.name)), h('p', { class: 'serif draft-text' }, inline(room.draft.text)))); })() : null,
+      room.draft ? null : roomStatus())),
     h('div', { class: 'composer' }, composerInput,
       h('button', { class: `round-btn${room.phase.kind === 'listening' ? ' live' : ''}`, 'aria-label': room.phase.kind === 'listening' ? 'Stop listening' : 'Talk to the panel', onclick: () => { reader.stop(); room.micTapped(); } }, icon('mic', 20)),
       h('button', { class: 'round-btn accent', 'aria-label': 'Send', onclick: sendDraft }, icon('send', 20))));
@@ -664,6 +670,8 @@ function viewSettings() {
       return select(seat.title.replace(/^The /, ''), [['', `Main model (${shortModel(L.model)})`], ...localModelOptions(own || L.model)], own,
         (m) => setLocal({ councilModels: { [seat.id]: m } }), missing ? 'Not downloaded, so the main model stands in' : null);
     }),
+    h('p', { class: 'caption muted' }, 'Live discussion: the model each agent speaks with. Unset means the main model.'),
+    PANELISTS.map((p) => select(p.name, [['', `Main model (${L.model})`], ...localModelOptions(L.agentModels?.[p.id] ?? '').filter(([m]) => m)], L.agentModels?.[p.id] ?? '', (m) => setLocal({ agentModels: { [p.id]: m } }))),
     h('label', { class: 'setting-row' }, h('span', {}, 'Prefer local models'), h('input', { type: 'checkbox', class: 'switch', 'aria-label': 'Prefer local models', checked: L.prefer, onchange: (e) => setLocal({ prefer: e.target.checked }) })),
     h('p', { class: 'caption muted' }, 'An Ollama server on your own GPU machine, such as a DGX Spark / GB10, on this network or over a VPN. The main model writes briefs and digests, the fast model writes quick reads, and the Frontier Council and Brainstorm always run on it, at no plan or API cost. It steps in whenever Claude, GPT or Grok can’t be reached, or answers first when “Prefer local models” is on. Live X and web research always uses Grok.'),
     h('div', { class: 'setting-row start' }, h('button', { class: 'btn small', disabled: !L.configured, onclick: async (e) => {
@@ -736,11 +744,12 @@ function renderReaderBar() {
 let lastRoute = null;
 let pendingRender = false;
 
-function render() {
+function render(force = false) {
   if (!S) return;
   // Don't pull a field out from under someone typing; catch up when they leave it.
   const focus = document.activeElement;
-  if (focus && main.contains(focus) && focus.matches('input:not([type=checkbox]), textarea, select') && lastRoute === location.hash) {
+  const refocus = force && focus && main.contains(focus) ? focus.getAttribute('aria-label') : null;
+  if (!force && focus && main.contains(focus) && focus.matches('input:not([type=checkbox]), textarea, select') && lastRoute === location.hash) {
     pendingRender = true;
     return;
   }
@@ -772,6 +781,7 @@ function render() {
   scrollTo(0, keep);
   const nextTranscript = main.querySelector('.transcript');
   if (nextTranscript) nextTranscript.scrollTop = wasAtBottom ? nextTranscript.scrollHeight : previousTop;
+  if (refocus) { const el = main.querySelector(`[aria-label="${refocus}"]`); el?.focus(); el?.setSelectionRange?.(el.value.length, el.value.length); }
 }
 
 document.addEventListener('focusout', () => setTimeout(() => { if (pendingRender) render(); }, 0));
@@ -804,7 +814,10 @@ reader.onChange = () => {
     } else if (route().name === 'brief') render();
   } else if (['brief'].includes(route().name)) render();
 };
-room.onChange = () => { if (route().name === 'brainstorm') render(); };
+// Forced: the composer stays focused while the panel talks, and the page must still update (the draft is kept in brainstormUI).
+room.onChange = () => { if (route().name === 'brainstorm') render(true); };
+live.onChange = () => { if (route().name === 'brainstorm' && room.mode === 'live') render(true); };
+connectLive();
 
 let fetching = null;
 async function loadState() {
