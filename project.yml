@@ -8,10 +8,6 @@ options:
 settings:
   base:
     DEVELOPMENT_TEAM: 228JYK7A2M
-packages:
-  LiteRTLM:
-    url: https://github.com/google-ai-edge/LiteRT-LM
-    exactVersion: 0.18.1
 targets:
   SooFrontier:
     type: application
@@ -28,21 +24,6 @@ targets:
       - path: SooFrontier/Resources/Portraits
         type: folder
         buildPhase: resources
-    dependencies:
-      - package: LiteRTLM
-        product: LiteRTLM
-    preBuildScripts:
-      - name: Embed LiteRT-LM library (macOS)
-        basedOnDependencyAnalysis: false
-        script: |
-          if [ "$PLATFORM_NAME" = "macosx" ]; then
-            DEST="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
-            mkdir -p "$DEST"
-            cp -f "$BUILT_PRODUCTS_DIR/libCLiteRTLM_mac.dylib" "$DEST/"
-            if [ -n "$EXPANDED_CODE_SIGN_IDENTITY" ]; then
-              codesign --force --timestamp=none --sign "$EXPANDED_CODE_SIGN_IDENTITY" "$DEST/libCLiteRTLM_mac.dylib"
-            fi
-          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.soofrontier.app
@@ -50,14 +31,13 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: "5.0"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        "LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]": "$(inherited) @executable_path/../Frameworks"
         CODE_SIGN_STYLE: Automatic
         CURRENT_PROJECT_VERSION: "1"
         MARKETING_VERSION: "1.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: SooFrontier/Info.plist
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "SooFrontier connects to your Mac to use your Claude and ChatGPT subscriptions."
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: "SooFrontier connects to your Mac to use your Claude and ChatGPT subscriptions, and to your local model server."
         INFOPLIST_KEY_CFBundleDisplayName: SooFrontier
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.news
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

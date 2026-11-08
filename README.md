@@ -67,7 +67,27 @@ Every morning at 6:00 am Pacific the harvesters run in parallel and publish as t
 
 ## Models
 
-Each provider runs either on a plan you already pay for, through its official CLI on the Mac (`claude`, `codex`, `grok`), or on an API key. iPhone and iPad can pair with a Mac on the same network and use its plans. With no connection, Gemma runs on device through [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM).
+Each provider runs either on a plan you already pay for, through its official CLI on the Mac (`claude`, `codex`, `grok`), or on an API key. iPhone and iPad can pair with a Mac on the same network and use its plans.
+
+### Local models on your own GPU
+
+Open-weight models can run on your own machine, such as an NVIDIA DGX Spark / GB10 with 128 GB, through [Ollama](https://ollama.com). They write whenever Claude, GPT or Grok can't be reached, or answer first when **Prefer local models** is on. Live X and web research always goes to Grok.
+
+| Role | Default | Why |
+| --- | --- | --- |
+| Main model: brief, analyses, Council rulings | `gpt-oss:120b` | The strongest open model that fits in 128 GB (about 65 GB) |
+| Fast model: quick reads | `qwen3.6:35b-a3b` | Mixture of experts with 3B active parameters, so it's quick on the GB10's memory bandwidth |
+
+On the GPU box:
+
+```bash
+ollama pull gpt-oss:120b
+ollama pull qwen3.6:35b-a3b
+# Listen beyond localhost so iPhone, iPad and the Mac can reach it
+sudo systemctl edit ollama   # add: Environment="OLLAMA_HOST=0.0.0.0:11434"
+```
+
+In **Settings → Local models**, enter the server's address: its LAN IP (`http://192.168.1.20:11434`), its `.local` name, or its IP on a VPN like Tailscale (`http://100.x.y.z:11434`) to use it away from home. iOS allows plain HTTP only to local names and IP addresses; for a full hostname such as a Tailscale MagicDNS name, serve it over HTTPS (`tailscale serve --bg 11434`). Ollama has no sign-in, so keep it on your LAN or VPN and don't forward the port to the internet.
 
 ## Building the apps
 
@@ -101,7 +121,7 @@ Then open http://localhost:5180.
 | Path | What's there |
 | --- | --- |
 | `SooFrontier/Agents` | Harvesters and thinkers |
-| `SooFrontier/Services` | Feeds, model access, CLI runner, Mac bridge, on-device Gemma |
+| `SooFrontier/Services` | Feeds, model access, CLI runner, Mac bridge, local model server |
 | `SooFrontier/Store` | App state, daily refresh, appearance |
 | `SooFrontier/Views`, `Brainstorm` | The desks, story pages and the meeting room |
 | `SooFrontier/Resources` | The video meeting stage and panelist portraits |

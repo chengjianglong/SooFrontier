@@ -1,5 +1,5 @@
 // The app shell and its tabs: Brief, Research, Productions, Opinions, Brainstorm, Settings.
-import { AGENTS, CATEGORIES, PANELISTS, PROVIDERS, SECTIONS, VOICE_ROLES, agentColor, capitalize, futureWork, hypeWatch, itemsIn, laneOpportunities, parseStructure, quickTLDR, quickTakeaways, sentences, spokenScript, technicalDetails, topSignals, verdict, keyPoints, byScore } from './shared.js';
+import { AGENTS, CATEGORIES, LOCAL_PROVIDER, PANELISTS, PROVIDERS, SECTIONS, providerInfo, VOICE_ROLES, agentColor, capitalize, futureWork, hypeWatch, itemsIn, laneOpportunities, parseStructure, quickTLDR, quickTakeaways, sentences, spokenScript, technicalDetails, topSignals, verdict, keyPoints, byScore } from './shared.js';
 import { Reader, SPEEDS } from './reader.js';
 import { Room } from './room.js';
 import { api, h, icon, inline, markdown, request, store, timeAgo } from './ui.js';
@@ -29,7 +29,9 @@ function route() {
 
 const itemHref = (item) => `#/item/${encodeURIComponent(item.url)}`;
 const isSaved = (item) => S.saved.includes(item.url);
-const isOnPlan = (p) => S.providers[p].configured;
+const isOnPlan = (p) => (p === 'local' ? S.local : S.providers[p]).configured;
+const LOCAL_MODELS = ['gpt-oss:120b', 'qwen3.8:27b', 'qwen3.6:35b-a3b', 'qwen3-next:80b', 'gemma4:31b', 'gpt-oss:20b'];
+const councilSeats = () => [...Object.keys(PROVIDERS), 'local'].filter(isOnPlan);
 
 // MARK: Appearance
 
@@ -156,7 +158,7 @@ function viewBrief() {
 
   const masthead = h('div', { class: 'masthead' }, eyebrow(today),
     h('p', { class: 'sub' }, `${items.length} signals · ${Object.keys(AGENTS).length} agents${S.lastRefresh ? ` · updated ${timeAgo(S.lastRefresh)}` : ''} · next update ${next}`),
-    h('div', { class: 'providers' }, Object.keys(PROVIDERS).map((p) => h('span', { class: `provider${isOnPlan(p) ? ' on' : ''}` }, h('span', { class: 'dot' }), PROVIDERS[p].family))),
+    h('div', { class: 'providers' }, [...Object.keys(PROVIDERS), 'local'].map((p) => h('span', { class: `provider${isOnPlan(p) ? ' on' : ''}` }, h('span', { class: 'dot' }), providerInfo(p).family))),
     h('div', { class: 'thick-rule' }));
 
   const brief = h('section', { class: 'stack' },
@@ -384,7 +386,7 @@ function viewStory(id) {
   };
 
   const action = (title, iconName, onclick, disabled = false) => h('button', { class: 'action', onclick, disabled }, icon(iconName, 20), h('span', {}, title));
-  const seats = Object.keys(PROVIDERS).filter(isOnPlan);
+  const seats = councilSeats();
 
   return h('div', { class: 'page reading' },
     h('div', { class: 'story-bar' },
@@ -413,7 +415,7 @@ function viewStory(id) {
     st.convening || st.council.length ? h('section', { class: 'council' }, sectionRule('The Frontier Council'),
       seats.map((p) => {
         const t = st.council.find((x) => x.provider === p);
-        return h('div', { class: 'seat' }, h('div', { class: 'seat-name' }, eyebrow(PROVIDERS[p].seat.title, 'strong'), eyebrow(`· ${PROVIDERS[p].family}`)),
+        return h('div', { class: 'seat' }, h('div', { class: 'seat-name' }, eyebrow(providerInfo(p).seat.title, 'strong'), eyebrow(`· ${providerInfo(p).family}`)),
           t ? (t.failed ? h('p', { class: 'red callout' }, t.text) : h('div', { class: 'serif' }, markdown(t.text))) : spinner('Deliberating…'));
       }),
       st.ruling ? h('div', { class: 'ruling' }, eyebrow('The ruling', 'accent'), structuredText(st.ruling))
@@ -635,6 +637,26 @@ function viewSettings() {
       h('div', { class: 'setting-row start' }, test, result));
   };
 
+  const L = S.local;
+  const setLocal = (patch) => api('/api/settings', { local: patch });
+  const localResult = h('span', { class: 'caption muted' });
+  const localModelOptions = (current) => [...new Set([...L.installed, ...LOCAL_MODELS, current])].sort()
+    .map((m) => [m, !L.reachable || L.installed.includes(m) ? m : `${m} (not downloaded)`]);
+  const local = section('Local models · your GPU box',
+    h('label', { class: 'setting-row' }, h('span', {}, 'Server'), h('input', { class: 'field', value: L.url, placeholder: 'http://192.168.1.20:11434', autocomplete: 'off', spellcheck: 'false', onchange: (e) => setLocal({ url: e.target.value }) })),
+    h('div', { class: 'setting-row' }, h('span', {}, 'Status'), h('span', { class: `caption ${L.configured ? 'muted' : 'red'}` },
+      !L.url ? 'Not set' : !L.reachable ? 'Not reachable' : L.configured ? `Connected · ${L.installed.length} models` : `Connected, but ${L.model} isn't downloaded`)),
+    select('Main model', localModelOptions(L.model), L.model, (model) => setLocal({ model })),
+    select('Fast model', localModelOptions(L.fastModel), L.fastModel, (fastModel) => setLocal({ fastModel })),
+    h('label', { class: 'setting-row' }, h('span', {}, 'Prefer local models'), h('input', { type: 'checkbox', class: 'switch', 'aria-label': 'Prefer local models', checked: L.prefer, onchange: (e) => setLocal({ prefer: e.target.checked }) })),
+    h('p', { class: 'caption muted' }, 'An Ollama server on your own GPU machine, such as a DGX Spark / GB10, on this network or over a VPN. The main model writes briefs, analyses and rulings, the fast model writes quick reads, and it takes the Open-Weights Advocate seat on the Council. It steps in whenever Claude, GPT or Grok can’t be reached, or answers first when “Prefer local models” is on. Live X and web research always uses Grok.'),
+    h('div', { class: 'setting-row start' }, h('button', { class: 'btn small', disabled: !L.configured, onclick: async (e) => {
+      e.target.disabled = true; localResult.textContent = 'Testing… (the first answer loads the model, which can take a minute)';
+      try { const r = await api('/api/provider/test', { provider: 'local' }); localResult.textContent = `✓ ${r.text.slice(0, 40)}`; }
+      catch (err) { localResult.textContent = `✗ ${err.message}`; }
+      e.target.disabled = false;
+    } }, 'Test connection'), localResult));
+
   const familyOptions = Object.keys(PROVIDERS).map((p) => [p, PROVIDERS[p].family]);
   const roles = section('Roles',
     select('Synthesizer & moderator', familyOptions, S.synthesizerProvider, (v) => api('/api/settings', { synthesizerProvider: v })),
@@ -675,8 +697,8 @@ function viewSettings() {
         h('button', { 'aria-label': `Remove @${v.handle}`, onclick: () => api('/api/settings', { voices: S.voices.filter((x) => x !== v) }) }, icon('close', 12)))))) : null;
     }));
 
-  return h('div', { class: 'page settings' }, h('h1', { class: 'display' }, 'Settings'), appearance, Object.keys(PROVIDERS).map(provider), roles, agents, voiceSection,
-    section('About the web version', h('p', { class: 'caption muted' }, 'This server runs the crew and refreshes at 6:00 am Pacific while it is running. On-device Gemma and the Mac bridge belong to the native apps: here, models run on the computer running this server.')));
+  return h('div', { class: 'page settings' }, h('h1', { class: 'display' }, 'Settings'), appearance, local, Object.keys(PROVIDERS).map(provider), roles, agents, voiceSection,
+    section('About the web version', h('p', { class: 'caption muted' }, 'This server runs the crew and refreshes at 6:00 am Pacific while it is running. The Mac bridge belongs to the native apps: here, models run on the computer running this server, or on the local model server above.')));
 }
 
 // MARK: Reader bar

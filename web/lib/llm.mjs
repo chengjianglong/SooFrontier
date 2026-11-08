@@ -156,6 +156,71 @@ async function chatCompletions(provider, { apiKey, model, system, prompt, maxTok
   return text.trim();
 }
 
+// MARK: Local models: an Ollama server on your GPU box (e.g. a DGX Spark / GB10), reached over the LAN or a VPN.
+
+export const LOCAL = {
+  defaultURL: process.env.SOOFRONTIER_LOCAL_URL ?? 'http://localhost:11434',
+  // The strongest model that fits a 128 GB GB10, and a fast mixture-of-experts model for short jobs.
+  defaultModel: 'gpt-oss:120b',
+  defaultFastModel: 'qwen3.6:35b-a3b',
+  suggestedModels: ['gpt-oss:120b', 'qwen3.8:27b', 'qwen3.6:35b-a3b', 'qwen3-next:80b', 'gemma4:31b', 'gpt-oss:20b'],
+};
+
+const trimURL = (url) => url.trim().replace(/\/+$/, '');
+
+/** Models the local server has downloaded, or null when it can't be reached. */
+export async function localModels(url) {
+  try {
+    const r = await fetch(`${trimURL(url)}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    return ((await r.json()).models ?? []).map((m) => m.name).sort();
+  } catch { return null; }
+}
+
+export function makeLocalClient({ url, model, fastModel = model }) {
+  return {
+    provider: 'local', mode: 'local', model, label: `${model} · local`,
+    /** The same server with its fast model, for quick jobs. */
+    withModel() { return makeLocalClient({ url, model: fastModel || model, fastModel }); },
+    async complete({ system, prompt, maxTokens = 8000, signal }) {
+      const timeout = AbortSignal.timeout(600_000);
+      const body = { model, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };
+      // gpt-oss reasons before it answers; keep that short so the token budget goes to the answer.
+      if (model.startsWith('gpt-oss')) body.reasoning_effort = maxTokens <= 3000 ? 'low' : 'medium';
+      let r;
+      try {
+        r = await fetch(`${trimURL(url)}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+          signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+      } catch (e) {
+        if (signal?.aborted) throw new Error('Cancelled');
+        throw new Error(`Can't reach the local model server at ${url} (${e.cause?.code ?? e.message}).`);
+      }
+      const json = await r.json().catch(() => ({}));
+      if (r.status !== 200) throw new Error(`Local model (${model}): ${json.error?.message ?? json.error ?? `HTTP ${r.status}`}`);
+      const choice = json.choices?.[0];
+      const text = (choice?.message?.content ?? '').trim();
+      if (!text) throw new Error(`Local model (${model}) returned no text (${choice?.finish_reason ?? 'empty'}).`);
+      return text;
+    },
+  };
+}
+
+const UNREACHABLE = /can't reach|enotfound|econnrefused|econnreset|etimedout|network|timed out|timeout|fetch failed|couldn't find the `/i;
+
+/** Tries `first`, and on an unreachable/missing provider, `second`. Research jobs never switch. */
+export function withFallback(first, second) {
+  if (!second) return first;
+  return {
+    ...first,
+    withModel: (cli, api) => withFallback(first.withModel(cli, api), second.withModel(cli, api)),
+    async complete(args) {
+      try { return await first.complete(args); } catch (e) {
+        if (args.research || args.signal?.aborted || !UNREACHABLE.test(e.message)) throw e;
+        return second.complete(args);
+      }
+    },
+  };
+}
+
 /** One configured provider + model, able to answer a single-turn prompt. */
 export function makeClient(provider, { mode, apiKey = '', model, cliModel = '' }) {
   const p = PROVIDERS[provider];

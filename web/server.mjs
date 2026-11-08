@@ -113,7 +113,7 @@ const ROUTES = {
   'POST /api/settings': (req, res, body) => { store.updateSettings(body); sendJSON(res, 200, {}); },
 
   'POST /api/provider/test': async (req, res, body) => {
-    if (!PROVIDERS[body.provider]) return sendJSON(res, 400, { error: 'Unknown provider' });
+    if (!PROVIDERS[body.provider] && body.provider !== 'local') return sendJSON(res, 400, { error: 'Unknown provider' });
     sendJSON(res, 200, { text: await store.testProvider(body.provider) });
   },
 

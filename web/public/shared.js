@@ -57,6 +57,14 @@ export const PROVIDERS = {
   },
 };
 
+/** The open-weight models on your own GPU box (an Ollama server), shown alongside the three providers. */
+export const LOCAL_PROVIDER = {
+  name: 'Local', family: 'Local',
+  seat: { title: 'The Open-Weights Advocate', brief: 'Hands-on open-model practitioner. Judge whether this can be reproduced, run and fine-tuned on hardware you own, and what the closed labs are not telling you.' },
+};
+/** Display info for a provider id, including 'local'. */
+export const providerInfo = (p) => PROVIDERS[p] ?? LOCAL_PROVIDER;
+
 export const PANELISTS = [
   { id: 'skeptic', name: 'Skeptic', agent: 'skeptic', provider: 'anthropic', aliases: ['claude'],
     viewpoint: 'A rigorous methodologist. You test claims: missing baselines, weak evidence, hidden assumptions, and what would change your mind.' },

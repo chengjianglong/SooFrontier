@@ -1,5 +1,5 @@
 // Everything the agents are told. Ported from Agents/Thinkers.swift, Models/FrontierModels.swift and Brainstorm/BrainstormRoom.swift.
-import { CATEGORIES, PANELISTS, PROVIDERS, verdict } from '../public/shared.js';
+import { CATEGORIES, PANELISTS, PROVIDERS, providerInfo, verdict } from '../public/shared.js';
 
 const ELABORATION = 'Each takeaway is a bold one-line claim followed by 2–4 sentences that elaborate it with specifics: the mechanism, the numbers or evidence, how it compares with prior work, and why it matters to a researcher or builder. Each potential opportunity names a concrete improvement or extension and explains in 1–2 sentences how to pursue it and why it is promising.';
 
@@ -103,7 +103,7 @@ export function offlineBrief(tops) {
   return `## TL;DR\nToday's top signals across ${tops.length} lanes, ranked by freshness, traction, and the Skeptic's checks. Connect Claude, GPT, or Grok in Settings for a full analytical brief.\n\n## Takeaways\n${lines}\n\n## Potential opportunities\n${ideas}`;
 }
 
-export const seatSystem = (provider) => `You sit on SooFrontier's Frontier Council as ${PROVIDERS[provider].seat.title}. ${PROVIDERS[provider].seat.brief}
+export const seatSystem = (provider) => `You sit on SooFrontier's Frontier Council as ${providerInfo(provider).seat.title}. ${providerInfo(provider).seat.brief}
 React to the item in at most 140 words of Markdown: open with a bold one-line take, then 2–3 bullets.
 Be concrete and opinionated, and never generic.`;
 

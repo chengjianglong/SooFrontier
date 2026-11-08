@@ -15,6 +15,11 @@
 		<string>audio</string>
 		<string>fetch</string>
 	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_soofrontier._tcp</string>

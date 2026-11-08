@@ -16,8 +16,10 @@ final class FrontierStore {
     var digestsInProgress: Set<FrontierSection> = []
     /// Per-story Potential opportunities for the quick read, keyed by item id.
     var quickReads: [String: QuickRead] = [:]
-    /// The on-device Gemma model used when the network or Mac bridge is unavailable.
-    let gemma = GemmaModel()
+    /// The open-weight model server (e.g. a GB10 on your network or VPN) used when providers can't be reached.
+    var local = LocalModels.config {
+        didSet { LocalModels.save(local) }
+    }
     private var quickInFlight: [String: Task<QuickRead?, Never>] = [:]
 
     // Provider configuration
@@ -121,7 +123,7 @@ final class FrontierStore {
     /// Preferred provider for a role, falling back to any configured one.
     func roleClient(_ preferred: Provider) -> LLMClient? {
         client(preferred) ?? configuredProviders.first.flatMap { client($0) }
-            ?? (GemmaModel.installedURL() != nil ? LLMClient.gemma() : nil)
+            ?? (local.isConfigured ? LLMClient.local() : nil)
     }
 
     func setKey(_ key: String, for p: Provider) {
@@ -333,6 +335,7 @@ final class FrontierStore {
         // Prefer Claude Haiku on the plan for speed; otherwise whichever model writes analyses.
         var llm = client(.anthropic) ?? roleClient(skepticProvider)
         if llm?.provider == .anthropic { llm?.cliModel = "haiku"; llm?.model = "claude-haiku-5-5" }
+        llm?.fast = true
         guard let llm else { return nil }
         var prompt = SkepticAgent.prompt(for: item)
         if !keyPoints.isEmpty { prompt += "\n\nKey points:\n" + keyPoints.map { "- \($0)" }.joined(separator: "\n") }

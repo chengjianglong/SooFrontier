@@ -247,7 +247,7 @@ final class BrainstormRoom {
         phase = .thinking(p.name)
         let llm = store.client(p.provider) ?? store.roleClient(p.provider)
         guard let llm else {
-            error = "Connect a model in Settings, or download on-device Gemma, to brainstorm."
+            error = "Connect a model in Settings, or set up a local model server, to brainstorm."
             return nil
         }
         do {
