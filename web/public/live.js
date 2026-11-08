@@ -32,7 +32,7 @@ export function connectLive() {
   // Starter topics live in live-config.json; until it loads there are simply none to show.
   fetch('/live-config.json').then((r) => r.json()).then((c) => { live.config = c; live.onChange(); }).catch(() => {});
   source = new EventSource('/api/live/stream');
-  for (const kind of ['reset', 'turn', 'state']) source.addEventListener(kind, (e) => apply(kind, JSON.parse(e.data)));
+  for (const kind of ['reset', 'turn', 'state', 'delta']) source.addEventListener(kind, (e) => apply(kind, JSON.parse(e.data)));
 }
 
 const act = async (path, body) => { live.error = null; try { await api(path, body ?? {}); } catch (e) { live.error = e.message; live.onChange(); } };

@@ -50,7 +50,7 @@ export class AgentRoom extends EventEmitter {
     try { models = this.#config().models; } catch {}
     return {
       id: this.id, topic: this.topic, status: this.status, speaking: this.speaking, error: this.error, total: this.turns.length, draft: this.draft,
-      turns: this.turns.slice(-last),
+      turns: last ? this.turns.slice(-last) : [], // slice(-0) would return everything
       agents: ORDER.map((id) => ({ id, model: models[id] ?? null, memory: this.agents[id]?.memory ?? '', turns: this.agents[id]?.spoke ?? 0 })),
     };
   }
