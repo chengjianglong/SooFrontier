@@ -48,3 +48,7 @@ Then open http://localhost:5180.
 | `SooFrontier/Resources` | The video meeting stage and panelist portraits |
 | `web` | The browser version |
 | `design` | App icon sources and demo recordings |
+
+## License
+
+[MIT](LICENSE)
