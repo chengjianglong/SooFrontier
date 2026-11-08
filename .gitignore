@@ -1,0 +1,12 @@
+# Xcode build output
+build/
+build-*/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Web
+node_modules/
+
+# macOS
+.DS_Store

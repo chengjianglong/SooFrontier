@@ -1,0 +1,9 @@
+{
+  "name": "soofrontier-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SooFrontier in the browser",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node server.mjs" }
+}

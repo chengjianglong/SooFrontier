@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SooFrontier listens when you talk to the Brainstorm panel.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>SooFrontier turns what you say in Brainstorm into text for the agent panel, on your device when possible.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.soofrontier.app.dailyRefresh</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>fetch</string>
+	</array>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_soofrontier._tcp</string>
+	</array>
+</dict>
+</plist>

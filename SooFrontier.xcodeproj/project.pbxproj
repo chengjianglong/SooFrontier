@@ -1,0 +1,565 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		043156F74703A929FCE6407A /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FAE68B1FA7DF34640A93466 /* ItemDetailView.swift */; };
+		0D75F0CECC3F642E9F4AFBE3 /* FrontierStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E528DEAA44B1B1FC042DF46F /* FrontierStore.swift */; };
+		10F05DD1A937BB052950E521 /* LLM.swift in Sources */ = {isa = PBXBuildFile; fileRef = B57ED1F70C67B54B577D60F3 /* LLM.swift */; };
+		18110FA4A0DF6025F02A2DB8 /* BrainstormVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2304E814890135011874CC52 /* BrainstormVoice.swift */; };
+		25F466C9D35AA80A589D8529 /* Stage in Resources */ = {isa = PBXBuildFile; fileRef = E1E7BEB1938E3711E07BCFD4 /* Stage */; };
+		29CEA2927D578E4AAB2CFA33 /* OnDeviceGemma.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8212FA4E7D6331EA0B07EF07 /* OnDeviceGemma.swift */; };
+		2CEE591DFAB7C75F26F52411 /* Portraits in Resources */ = {isa = PBXBuildFile; fileRef = C688D29FC78267B2EFDB4E67 /* Portraits */; };
+		45BBD3EB316A64C140212DBF /* AgentsAndSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EB85CC6CADA5DC2834998EA /* AgentsAndSettings.swift */; };
+		4ABA28AEC9FF8D96BA1A238F /* Subscriptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACCEF45AD85331D73857C8E7 /* Subscriptions.swift */; };
+		504A5423F77E4CBD8BDEAD1D /* Appearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A1B420FF18EE103CA36829 /* Appearance.swift */; };
+		5195FEB9C614A33D4C563025 /* Thinkers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DED75C76A76492E00346C58 /* Thinkers.swift */; };
+		569BB43BC45B05286B41187F /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = E733471D5034E38645D8844F /* Components.swift */; };
+		56A809D455F0D25C3C26BA95 /* Harvesters.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE087E81A3644E213517F1FA /* Harvesters.swift */; };
+		634A83F017D2CCD7CAD4F1B3 /* BrainstormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0150225DFDC84A3728ABE1 /* BrainstormView.swift */; };
+		898415E5CB31A5B6C14E7004 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 922241BD8B5B79E66A72105B /* RootView.swift */; };
+		A08ABE1023FBFAEB76A462E0 /* SooFrontierApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7707748FB1772F3BE1682B64 /* SooFrontierApp.swift */; };
+		A5C2135875F8272A5B23D031 /* Network.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBD4EAB0C602574EE2FCFADD /* Network.swift */; };
+		AB1E138B9B7DA765C8C835A3 /* FaceStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A98BB7DCB4674DF64CFA505 /* FaceStage.swift */; };
+		C490ACCC8D4C51691D793478 /* FrontierModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 450A8881189B5B18A5F1746C /* FrontierModels.swift */; };
+		C6E384DCD5E9D6013A59F6C3 /* MissionControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3ED5A6C61BEF8D89FE0C40 /* MissionControlView.swift */; };
+		CAE4CE49F2FF2A79F7948EC2 /* PaperReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC808ED1136B4A1B8C91A825 /* PaperReader.swift */; };
+		D5D9FE7C18D3BBF5C48D6CF9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0030B6045EF28ACED5F5ABBE /* Assets.xcassets */; };
+		D9F2F83DABE80D5689873742 /* DailyRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B602AA9C9E6DE38433B778D /* DailyRefresh.swift */; };
+		E38C634548280AA56875BB1F /* BrainstormRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97BCDBC1133A4A3B05A5F0F2 /* BrainstormRoom.swift */; };
+		EF414670E95CEB2EC46198B7 /* Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7F93DC65AE6FEEAABF5C1C7 /* Reader.swift */; };
+		F21D1097855B877F92254F48 /* LiteRTLM in Frameworks */ = {isa = PBXBuildFile; productRef = F1AED216F1C3D23A0D45D7A9 /* LiteRTLM */; };
+		F321C698C49CD4360500FDEC /* FeedParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD8515E971AB285F43DA9AEC /* FeedParser.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0030B6045EF28ACED5F5ABBE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1F84CD7F80B123577D8B3544 /* SooFrontier.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SooFrontier.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2304E814890135011874CC52 /* BrainstormVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainstormVoice.swift; sourceTree = "<group>"; };
+		2DED75C76A76492E00346C58 /* Thinkers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Thinkers.swift; sourceTree = "<group>"; };
+		3FAE68B1FA7DF34640A93466 /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
+		450A8881189B5B18A5F1746C /* FrontierModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontierModels.swift; sourceTree = "<group>"; };
+		4EB85CC6CADA5DC2834998EA /* AgentsAndSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsAndSettings.swift; sourceTree = "<group>"; };
+		6A98BB7DCB4674DF64CFA505 /* FaceStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceStage.swift; sourceTree = "<group>"; };
+		6B602AA9C9E6DE38433B778D /* DailyRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyRefresh.swift; sourceTree = "<group>"; };
+		7707748FB1772F3BE1682B64 /* SooFrontierApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SooFrontierApp.swift; sourceTree = "<group>"; };
+		7C3ED5A6C61BEF8D89FE0C40 /* MissionControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MissionControlView.swift; sourceTree = "<group>"; };
+		8212FA4E7D6331EA0B07EF07 /* OnDeviceGemma.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceGemma.swift; sourceTree = "<group>"; };
+		922241BD8B5B79E66A72105B /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		97BCDBC1133A4A3B05A5F0F2 /* BrainstormRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainstormRoom.swift; sourceTree = "<group>"; };
+		A8A1B420FF18EE103CA36829 /* Appearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Appearance.swift; sourceTree = "<group>"; };
+		ACCEF45AD85331D73857C8E7 /* Subscriptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Subscriptions.swift; sourceTree = "<group>"; };
+		B57ED1F70C67B54B577D60F3 /* LLM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLM.swift; sourceTree = "<group>"; };
+		BC808ED1136B4A1B8C91A825 /* PaperReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperReader.swift; sourceTree = "<group>"; };
+		C688D29FC78267B2EFDB4E67 /* Portraits */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Portraits; path = SooFrontier/Resources/Portraits; sourceTree = SOURCE_ROOT; };
+		CBD4EAB0C602574EE2FCFADD /* Network.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Network.swift; sourceTree = "<group>"; };
+		CD8515E971AB285F43DA9AEC /* FeedParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedParser.swift; sourceTree = "<group>"; };
+		DB0150225DFDC84A3728ABE1 /* BrainstormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainstormView.swift; sourceTree = "<group>"; };
+		DE087E81A3644E213517F1FA /* Harvesters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Harvesters.swift; sourceTree = "<group>"; };
+		E1E7BEB1938E3711E07BCFD4 /* Stage */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Stage; path = SooFrontier/Resources/Stage; sourceTree = SOURCE_ROOT; };
+		E528DEAA44B1B1FC042DF46F /* FrontierStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontierStore.swift; sourceTree = "<group>"; };
+		E733471D5034E38645D8844F /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		E7F93DC65AE6FEEAABF5C1C7 /* Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reader.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C391BBC04F6E6EE96ED516DD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F21D1097855B877F92254F48 /* LiteRTLM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		39CABEEFC4E037B3258C637B /* App */ = {
+			isa = PBXGroup;
+			children = (
+				7707748FB1772F3BE1682B64 /* SooFrontierApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		42103DA5997DBE9675076856 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				450A8881189B5B18A5F1746C /* FrontierModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		4AF9D28DFFECA8C583B0D91A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1F84CD7F80B123577D8B3544 /* SooFrontier.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		51C228F068BE6C3A54531498 = {
+			isa = PBXGroup;
+			children = (
+				C688D29FC78267B2EFDB4E67 /* Portraits */,
+				E1E7BEB1938E3711E07BCFD4 /* Stage */,
+				CB61F8C7C98969A64AC0FF5B /* SooFrontier */,
+				4AF9D28DFFECA8C583B0D91A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		53199CD9857C39064DDB6EF4 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				4EB85CC6CADA5DC2834998EA /* AgentsAndSettings.swift */,
+				E733471D5034E38645D8844F /* Components.swift */,
+				3FAE68B1FA7DF34640A93466 /* ItemDetailView.swift */,
+				7C3ED5A6C61BEF8D89FE0C40 /* MissionControlView.swift */,
+				922241BD8B5B79E66A72105B /* RootView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		6CD691981DF00E87E2DD855D /* Agents */ = {
+			isa = PBXGroup;
+			children = (
+				DE087E81A3644E213517F1FA /* Harvesters.swift */,
+				2DED75C76A76492E00346C58 /* Thinkers.swift */,
+			);
+			path = Agents;
+			sourceTree = "<group>";
+		};
+		B3F3CC19513C62AFE91C1C4F /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				A8A1B420FF18EE103CA36829 /* Appearance.swift */,
+				6B602AA9C9E6DE38433B778D /* DailyRefresh.swift */,
+				E528DEAA44B1B1FC042DF46F /* FrontierStore.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
+		CB254AC9EA38253F3CC917D7 /* Brainstorm */ = {
+			isa = PBXGroup;
+			children = (
+				97BCDBC1133A4A3B05A5F0F2 /* BrainstormRoom.swift */,
+				DB0150225DFDC84A3728ABE1 /* BrainstormView.swift */,
+				2304E814890135011874CC52 /* BrainstormVoice.swift */,
+				6A98BB7DCB4674DF64CFA505 /* FaceStage.swift */,
+			);
+			path = Brainstorm;
+			sourceTree = "<group>";
+		};
+		CB61F8C7C98969A64AC0FF5B /* SooFrontier */ = {
+			isa = PBXGroup;
+			children = (
+				0030B6045EF28ACED5F5ABBE /* Assets.xcassets */,
+				6CD691981DF00E87E2DD855D /* Agents */,
+				39CABEEFC4E037B3258C637B /* App */,
+				CB254AC9EA38253F3CC917D7 /* Brainstorm */,
+				42103DA5997DBE9675076856 /* Models */,
+				CE3AE26F7F45CB54F48D365A /* Services */,
+				B3F3CC19513C62AFE91C1C4F /* Store */,
+				53199CD9857C39064DDB6EF4 /* Views */,
+			);
+			path = SooFrontier;
+			sourceTree = "<group>";
+		};
+		CE3AE26F7F45CB54F48D365A /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				CD8515E971AB285F43DA9AEC /* FeedParser.swift */,
+				B57ED1F70C67B54B577D60F3 /* LLM.swift */,
+				CBD4EAB0C602574EE2FCFADD /* Network.swift */,
+				8212FA4E7D6331EA0B07EF07 /* OnDeviceGemma.swift */,
+				BC808ED1136B4A1B8C91A825 /* PaperReader.swift */,
+				E7F93DC65AE6FEEAABF5C1C7 /* Reader.swift */,
+				ACCEF45AD85331D73857C8E7 /* Subscriptions.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		"TEMP_FF8579DE-4B85-43EA-A71A-2BDA15D20E9D" /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4C8016D98E119A054A957B0E /* SooFrontier */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6257C80613FCC481AF1B27DD /* Build configuration list for PBXNativeTarget "SooFrontier" */;
+			buildPhases = (
+				980799B7D6A27EDA3B60631D /* Embed LiteRT-LM library (macOS) */,
+				5A3E102CECE83F42676D9327 /* Sources */,
+				AB5A8739C7C2151F824D6CEA /* Resources */,
+				C391BBC04F6E6EE96ED516DD /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SooFrontier;
+			packageProductDependencies = (
+				F1AED216F1C3D23A0D45D7A9 /* LiteRTLM */,
+			);
+			productName = SooFrontier;
+			productReference = 1F84CD7F80B123577D8B3544 /* SooFrontier.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C00887E1E057B7DFD1283D8A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					4C8016D98E119A054A957B0E = {
+						DevelopmentTeam = 228JYK7A2M;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 00D446B14CDE182363631DF5 /* Build configuration list for PBXProject "SooFrontier" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 51C228F068BE6C3A54531498;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				CBBEACE6E58B24B71DAF7521 /* XCRemoteSwiftPackageReference "LiteRT-LM" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4AF9D28DFFECA8C583B0D91A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4C8016D98E119A054A957B0E /* SooFrontier */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AB5A8739C7C2151F824D6CEA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D5D9FE7C18D3BBF5C48D6CF9 /* Assets.xcassets in Resources */,
+				2CEE591DFAB7C75F26F52411 /* Portraits in Resources */,
+				25F466C9D35AA80A589D8529 /* Stage in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		980799B7D6A27EDA3B60631D /* Embed LiteRT-LM library (macOS) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed LiteRT-LM library (macOS)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"$PLATFORM_NAME\" = \"macosx\" ]; then\n  DEST=\"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH\"\n  mkdir -p \"$DEST\"\n  cp -f \"$BUILT_PRODUCTS_DIR/libCLiteRTLM_mac.dylib\" \"$DEST/\"\n  if [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n    codesign --force --timestamp=none --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$DEST/libCLiteRTLM_mac.dylib\"\n  fi\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5A3E102CECE83F42676D9327 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				45BBD3EB316A64C140212DBF /* AgentsAndSettings.swift in Sources */,
+				504A5423F77E4CBD8BDEAD1D /* Appearance.swift in Sources */,
+				E38C634548280AA56875BB1F /* BrainstormRoom.swift in Sources */,
+				634A83F017D2CCD7CAD4F1B3 /* BrainstormView.swift in Sources */,
+				18110FA4A0DF6025F02A2DB8 /* BrainstormVoice.swift in Sources */,
+				569BB43BC45B05286B41187F /* Components.swift in Sources */,
+				D9F2F83DABE80D5689873742 /* DailyRefresh.swift in Sources */,
+				AB1E138B9B7DA765C8C835A3 /* FaceStage.swift in Sources */,
+				F321C698C49CD4360500FDEC /* FeedParser.swift in Sources */,
+				C490ACCC8D4C51691D793478 /* FrontierModels.swift in Sources */,
+				0D75F0CECC3F642E9F4AFBE3 /* FrontierStore.swift in Sources */,
+				56A809D455F0D25C3C26BA95 /* Harvesters.swift in Sources */,
+				043156F74703A929FCE6407A /* ItemDetailView.swift in Sources */,
+				10F05DD1A937BB052950E521 /* LLM.swift in Sources */,
+				C6E384DCD5E9D6013A59F6C3 /* MissionControlView.swift in Sources */,
+				A5C2135875F8272A5B23D031 /* Network.swift in Sources */,
+				29CEA2927D578E4AAB2CFA33 /* OnDeviceGemma.swift in Sources */,
+				CAE4CE49F2FF2A79F7948EC2 /* PaperReader.swift in Sources */,
+				EF414670E95CEB2EC46198B7 /* Reader.swift in Sources */,
+				898415E5CB31A5B6C14E7004 /* RootView.swift in Sources */,
+				A08ABE1023FBFAEB76A462E0 /* SooFrontierApp.swift in Sources */,
+				4ABA28AEC9FF8D96BA1A238F /* Subscriptions.swift in Sources */,
+				5195FEB9C614A33D4C563025 /* Thinkers.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0F40FB0D68B7CB85700A1FED /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SooFrontier/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SooFrontier;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "SooFrontier connects to your Mac to use your Claude and ChatGPT subscriptions.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "$(inherited) @executable_path/../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.soofrontier.app;
+				PRODUCT_NAME = SooFrontier;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		374AD9BFFDFBF2A6390D8257 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SooFrontier/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SooFrontier;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "SooFrontier connects to your Mac to use your Claude and ChatGPT subscriptions.";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "$(inherited) @executable_path/../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.soofrontier.app;
+				PRODUCT_NAME = SooFrontier;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		40846ECC6DED3FFC20F53690 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 228JYK7A2M;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		612247DAE2883E324252C88F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 228JYK7A2M;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		00D446B14CDE182363631DF5 /* Build configuration list for PBXProject "SooFrontier" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				40846ECC6DED3FFC20F53690 /* Debug */,
+				612247DAE2883E324252C88F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6257C80613FCC481AF1B27DD /* Build configuration list for PBXNativeTarget "SooFrontier" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				374AD9BFFDFBF2A6390D8257 /* Debug */,
+				0F40FB0D68B7CB85700A1FED /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		CBBEACE6E58B24B71DAF7521 /* XCRemoteSwiftPackageReference "LiteRT-LM" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google-ai-edge/LiteRT-LM";
+			requirement = {
+				kind = exactVersion;
+				version = 0.18.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F1AED216F1C3D23A0D45D7A9 /* LiteRTLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBBEACE6E58B24B71DAF7521 /* XCRemoteSwiftPackageReference "LiteRT-LM" */;
+			productName = LiteRTLM;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C00887E1E057B7DFD1283D8A /* Project object */;
+}
