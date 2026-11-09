@@ -506,7 +506,7 @@ function meetingView(sendDraft) {
   const dockBtn = (title, ic, on, onclick, disabled = false) => h('button', { class: `dock-btn${on ? ' on' : ''}`, onclick, disabled, 'aria-pressed': String(Boolean(on)) }, h('span', { class: 'dock-round' }, icon(ic, 19)), h('span', { class: 'caption' }, title));
   const statusText = ph.kind === 'listening' ? "I'm listening… take your time" : ph.kind === 'thinking' ? `${ph.name} is thinking…` : ph.kind === 'speaking' ? 'Tap a face or Stop to jump in' : 'Tap the mic to talk';
   return [
-    h('div', { class: 'stage-wrap' }, meetingBuilt.holder,
+    h('div', { class: 'stage-wrap' }, h('div', { class: 'stage-slot' }),
       brainstormUI.showTranscript ? h('div', { class: 'meeting-transcript' }, room.messages.length ? room.messages.map(bubble) : h('p', { class: 'muted callout' }, 'Nothing said yet.')) : null),
     h('div', { class: 'captions', 'aria-live': 'polite' },
       m ? h('p', {}, h('strong', { class: 'accent-text' }, `${m.name}  `), m.isSummary ? 'Wrap-up ready. Open the transcript to read it.' : m.text.replace(/\*\*|`/g, '')) : null,
@@ -531,9 +531,31 @@ function showProgress() {
     PANELISTS.map((p) => { const said = room.messages.filter((m) => m.speaker === p.id); return h('div', { class: 'progress-row' }, h('span', {}, p.name), h('span', { class: 'mono muted' }, `${said.length} turns · ${words(said)} words`)); })));
 }
 
+/**
+ * Lays the meeting stage over its slot in the current view. The stage is created once and stays where it was
+ * first attached, because taking an iframe out of the page reloads it; elsewhere it is hidden, not removed.
+ */
+const slotObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => placeStage()) : null;
+let observedSlot = null;
+function placeStage() {
+  if (!meetingBuilt) return;
+  const { holder } = meetingBuilt;
+  if (!holder.isConnected) document.body.append(holder);
+  const slot = main.querySelector('.stage-slot');
+  if (slot !== observedSlot) {
+    if (observedSlot) slotObserver?.unobserve(observedSlot);
+    if (slot) slotObserver?.observe(slot);
+    observedSlot = slot;
+  }
+  if (!slot) { holder.style.display = 'none'; return; }
+  const r = slot.getBoundingClientRect();
+  Object.assign(holder.style, { display: '', left: `${r.left + scrollX}px`, top: `${r.top + scrollY}px`, width: `${r.width}px`, height: `${r.height}px` });
+}
+addEventListener('resize', () => placeStage());
+
 function buildStage() {
   const frame = h('iframe', { src: '/stage.html', title: 'Video meeting', class: 'stage' });
-  const holder = h('div', { class: 'stage-holder', onclick: () => { if (room.phase.kind === 'speaking') room.micTapped(); } }, frame);
+  const holder = h('div', { class: 'stage-holder floating', onclick: () => { if (room.phase.kind === 'speaking') room.micTapped(); } }, frame);
   const faces = {};
   let lastPanel = null;
   let last = performance.now();
@@ -575,7 +597,7 @@ function buildStage() {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const stage = frame.contentWindow?.SooStage;
-    if (stage && frame.isConnected) {
+    if (stage && frame.isConnected && holder.style.display !== 'none') {
       syncPanel();
       const ph = room.phase;
       const thinking = ph.kind === 'thinking' ? PANELISTS.find((p) => p.name === ph.name)?.id ?? null : null;
@@ -780,8 +802,9 @@ function render(force = false) {
   else if (r.name === 'settings') view = viewSettings();
   else view = viewBrief();
 
-  // Keep the live stage in place instead of reloading it on every update.
   main.replaceChildren(view);
+  // The live stage never moves: moving its iframe would reload it and blank the faces on every update.
+  placeStage();
   scrollTo(0, keep);
   const nextTranscript = main.querySelector('.transcript');
   if (nextTranscript) nextTranscript.scrollTop = wasAtBottom ? nextTranscript.scrollHeight : previousTop;
