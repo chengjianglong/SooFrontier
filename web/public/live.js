@@ -2,7 +2,7 @@
 import { PANELISTS, agentColor } from './shared.js';
 import { api, h, icon, inline } from './ui.js';
 
-export const live = { config: { starters: [], presets: {} }, optionsOpen: null, editing: null, edit: null, state: null, turns: [], draft: null, error: null, topic: '', say: '', notes: false, onChange() {} };
+export const live = { config: { starters: [], presets: {} }, showAll: false, optionsOpen: null, editing: null, edit: null, state: null, turns: [], draft: null, error: null, topic: '', say: '', notes: false, onChange() {} };
 let source = null;
 
 const seat = (id) => PANELISTS.find((p) => p.id === id);
@@ -85,6 +85,7 @@ function optionsPopover(s) {
     OPTION_ROWS.map(([key, label]) => h('div', { class: 'popover-field' }, h('span', { class: 'eyebrow strong' }, label),
       h('div', { class: 'segmented', role: 'group', 'aria-label': label }, Object.entries(presets[key] ?? {}).map(([id, p]) =>
         h('button', { class: s?.options?.[key] === id ? 'on' : '', 'aria-pressed': String(s?.options?.[key] === id), onclick: () => act('/api/live/options', { [key]: id }) }, p.label))))),
+    h('button', { class: 'btn small', onclick: () => { live.notes = !live.notes; live.optionsOpen = null; live.onChange(); } }, live.notes ? 'Hide agent notes' : 'Show agent notes'),
     h('p', { class: 'caption muted' }, 'Applies from the next turn. What an agent remembers is also capped by size, so prompts fit a small model’s context window.'));
 }
 
@@ -111,17 +112,21 @@ function agentStrip(s) {
         h('span', { class: `badge small${talking ? ' pulse' : ''}` }, p.name[0]),
         h('span', { class: 'chip-text' }, h('strong', {}, p.name), h('span', {}, a.model ? `Local · ${a.model}` : 'Local'))),
       open ? agentPopover(s, a) : null);
-  }).concat(h('div', { class: 'chip-wrap' },
-    h('button', { class: `panel-chip on${live.optionsOpen ? ' open' : ''}`, 'aria-haspopup': 'dialog', 'aria-expanded': String(Boolean(live.optionsOpen)), 'aria-label': 'Discussion settings', title: 'Discussion settings',
+  }));
+}
+
+/** The discussion Settings button, which sits in the header row beside the mode tabs. */
+export function liveOptions(s) {
+  return h('div', { class: 'chip-wrap' },
+    h('button', { class: `icon-btn${live.optionsOpen ? ' on' : ''}`, 'aria-haspopup': 'dialog', 'aria-expanded': String(Boolean(live.optionsOpen)), 'aria-label': 'Discussion settings', title: 'Discussion settings',
       onclick: (e) => {
         e.stopPropagation();
         live.editing = null; live.edit = null;
         if (live.optionsOpen) live.optionsOpen = null;
         else { const r = e.currentTarget.getBoundingClientRect(); live.optionsOpen = { left: Math.max(16, Math.min(r.left, innerWidth - 356)), top: r.bottom + 8 }; }
         live.onChange();
-      } },
-      h('span', { class: 'chip-text' }, h('strong', {}, 'Settings'), h('span', {}, s?.options ? `${live.config.presets.length?.[s.options.length]?.label ?? ''} replies` : '…'))),
-    live.optionsOpen && s?.options ? optionsPopover(s) : null)));
+      } }, icon('options')),
+    live.optionsOpen && s?.options ? optionsPopover(s) : null);
 }
 
 // A click anywhere else, or Escape, closes the popover.
@@ -141,11 +146,16 @@ export function liveView() {
   const speaker = s?.speaking ? seat(s.speaking)?.name : null;
   const err = live.error ?? s?.error;
 
-  const start = (topic) => { topic = topic.trim(); if (topic) { live.topic = ''; act('/api/live/start', { topic }); } };
+  const start = (topic) => { topic = topic.trim(); if (topic) { live.topic = ''; live.showAll = false; act('/api/live/start', { topic }); } };
   const send = () => { const t = live.say.trim(); live.say = ''; if (t) act('/api/live/say', { text: t }); live.onChange(); };
 
   const stateLine = status === 'running' ? (speaker ? `${speaker} is thinking…` : 'Starting…')
     : status === 'paused' ? 'Paused' : status === 'stopped' ? 'Stopped' : status === 'error' ? 'Stopped after repeated errors' : '';
+
+  // Rebuilding hundreds of messages on every update makes a phone stutter, so draw the newest ones and offer the rest.
+  const SHOWN = 40;
+  const shown = live.showAll ? live.turns : live.turns.slice(-SHOWN);
+  const hidden = live.turns.length - shown.length;
 
   const feed = h('div', { class: 'transcript' }, h('div', { class: 'transcript-inner' },
     s?.topic ? h('div', { class: 'live-topic' }, h('span', { class: 'eyebrow accent' }, 'Topic'), h('strong', {}, s.topic), h('span', { class: 'caption muted' }, `${s.total} turns`)) : null,
@@ -154,7 +164,8 @@ export function liveView() {
       h('p', { class: 'serif muted' }, 'Five agents debate on your local models and never stop until you do. Each has its own model and its own private notes. Jump in at any time and they will answer you.'),
       live.config.starters.map((t) => h('button', { class: 'starter', onclick: () => start(t) }, t))),
     live.notes ? notesView(s) : null,
-    live.turns.map(bubble),
+    hidden ? h('button', { class: 'btn small show-earlier', onclick: () => { live.showAll = true; live.onChange(); } }, `Show ${hidden} earlier messages`) : null,
+    shown.map(bubble),
     live.draft && status === 'running' ? draftBubble(live.draft) : null,
     stateLine && !(live.draft && status === 'running') ? h('p', { class: `callout ${status === 'running' ? 'muted' : ''}` }, stateLine) : null,
     err ? h('p', { class: 'callout red', role: 'alert' }, err) : null));
@@ -173,8 +184,14 @@ export function liveView() {
     h('button', { class: 'btn small danger', onclick: () => act('/api/live/stop') }, 'Stop'),
     h('button', { class: 'btn small', onclick: () => { live.notes = !live.notes; live.onChange(); } }, live.notes ? 'Hide notes' : 'Agent notes')) : null;
 
+  const quick = active ? h('div', { class: 'composer-controls' },
+    status === 'running'
+      ? h('button', { class: 'round-btn', 'aria-label': 'Pause', onclick: () => act('/api/live/pause') }, icon('pause', 18))
+      : h('button', { class: 'round-btn', 'aria-label': 'Resume', onclick: () => act('/api/live/resume') }, icon('play', 18)),
+    h('button', { class: 'round-btn stop', 'aria-label': 'Stop', onclick: () => act('/api/live/stop') }, icon('stop', 18))) : null;
+
   return [feed, controls,
-    h('div', { class: 'composer' }, active ? sayInput : topicInput,
+    h('div', { class: 'composer' }, quick, active ? sayInput : topicInput,
       h('button', { class: 'round-btn accent', 'aria-label': active ? 'Send' : 'Start', onclick: () => (active ? send() : start(live.topic)) }, icon('send', 20)))];
 }
 

@@ -73,6 +73,31 @@ test('serves the app, its data and the provider state', async () => {
   assert.deepEqual(state.local.installed, MODELS);
 });
 
+test('portrait landmarks ship with the app, so phones never run the face detector', async () => {
+  for (const id of ['skeptic', 'builder', 'contrarian', 'archivist', 'synthesizer']) {
+    const f = await get(`/landmarks/${id}.json`);
+    assert.equal(f.landmarks.length, 478, id);
+    assert.ok(f.width > 0 && f.height > 0 && f.landmarks.every(([x, y]) => x >= -0.2 && x <= 1.2 && y >= -0.2 && y <= 1.2), `${id} landmarks are normalized`);
+  }
+  assert.equal((await post('/api/dev/landmarks', { id: 'skeptic' })).status, 404, 'the save route is off unless SOOFRONTIER_DEV is set');
+});
+
+test('static files are validated, kept and compressed', async () => {
+  const first = await fetch(`${base}/live.js`);
+  const etag = first.headers.get('etag');
+  assert.ok(etag, 'files carry an ETag');
+  assert.equal((await fetch(`${base}/live.js`, { headers: { 'if-none-match': etag } })).status, 304, 'a browser that has it is not sent it again');
+  assert.match((await fetch(`${base}/vendor/delaunator/index.js`)).headers.get('cache-control'), /max-age=86400/, 'the face library may be kept for a day');
+  assert.equal((await fetch(`${base}/live.js`)).headers.get('cache-control'), 'no-cache', 'the app itself is always checked');
+  // Ask for brotli without decoding it, as a phone does, and see that it is smaller.
+  const raw = await new Promise((resolve) => http.get(`${base}/vendor/tasks-vision/vision_bundle.mjs`, { headers: { 'accept-encoding': 'br' } }, (res) => {
+    let n = 0; res.on('data', (c) => { n += c.length; }); res.on('end', () => resolve({ encoding: res.headers['content-encoding'], bytes: n, full: Number(res.headers['content-length']) }));
+  }));
+  assert.equal(raw.encoding, 'br');
+  const plain = (await fetch(`${base}/vendor/tasks-vision/vision_bundle.mjs`, { headers: { 'accept-encoding': 'identity' } })).headers.get('content-length');
+  assert.ok(raw.bytes < Number(plain) / 2, `brotli (${raw.bytes} B) should be much smaller than plain (${plain} B)`);
+});
+
 test('a discussion streams token by token and finishes as turns', async () => {
   assert.equal((await post('/api/live/start', { topic: '' })).status, 500, 'an empty topic is refused');
   assert.equal((await post('/api/live/start', { topic: 'Is this test fast?' })).status, 200);

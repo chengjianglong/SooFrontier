@@ -316,3 +316,23 @@ section { min-width: 0; }
 .popover-field textarea { resize: vertical; }
 .popover-actions { display: flex; gap: 8px; }
 .live-note { text-align: center; font-style: italic; padding: 2px 16px; }
+
+/* Live discussion on a phone: less chrome, more conversation. */
+.composer-controls { display: none; gap: 6px; }
+.round-btn.stop { color: var(--red); }
+.show-earlier { align-self: center; }
+@media (max-width: 760px) {
+  .brainstorm.live .segmented button svg { display: none; }
+  .brainstorm.live .segmented button { padding: 6px 10px; }
+  .brainstorm.live .panel-strip { padding: 4px 0 8px; gap: 6px; }
+  .brainstorm.live .panel-chip { min-height: 40px; padding: 3px 12px 3px 3px; }
+  .brainstorm.live .chip-text span { display: none; }
+  .brainstorm.live .chip-text strong { font-size: .8rem; }
+  .brainstorm.live .live-controls { display: none; }
+  .brainstorm.live .composer-controls { display: flex; }
+  .brainstorm.live .composer { padding: 8px 12px; gap: 6px; }
+  .brainstorm.live .transcript-inner { padding: 12px; gap: 14px; }
+  .brainstorm.live .bubble-agent { gap: 8px; padding-right: 0; }
+  .brainstorm.live .bubble-agent .badge { width: 26px; height: 26px; }
+  .brainstorm.live .popover { left: 12px !important; right: 12px; width: auto; }
+}

@@ -2,7 +2,7 @@
 import { AGENTS, CATEGORIES, COUNCIL_MAX_ROUNDS, COUNCIL_SEATS, shortModel, LOCAL_PROVIDER, PANELISTS, PROVIDERS, SECTIONS, providerInfo, VOICE_ROLES, agentColor, capitalize, futureWork, hypeWatch, itemsIn, laneOpportunities, parseStructure, quickTLDR, quickTakeaways, sentences, spokenScript, technicalDetails, topSignals, verdict, keyPoints, byScore } from './shared.js';
 import { Reader, SPEEDS } from './reader.js';
 import { Room } from './room.js';
-import { agentStrip, connectLive, live, liveView } from './live.js';
+import { agentStrip, connectLive, live, liveOptions, liveView } from './live.js';
 import { api, h, icon, inline, markdown, request, store, timeAgo } from './ui.js';
 
 const main = document.getElementById('main');
@@ -473,10 +473,11 @@ function viewBrainstorm() {
       h('button', { class: room.mode === id ? 'on' : '', 'aria-pressed': String(room.mode === id), onclick: () => room.setOption('mode', 'brainstorm.mode2', id) }, icon(ic, 16), label)));
 
   const header = h('div', { class: 'brainstorm-head' }, h('div', { class: 'mode-row' }, modeTabs,
-    h('button', { class: `icon-btn${brainstormUI.options ? ' on' : ''}`, 'aria-label': 'Options', 'aria-expanded': String(brainstormUI.options), onclick: () => { brainstormUI.options = !brainstormUI.options; render(); } }, icon('options'))),
+    room.mode === 'live' ? liveOptions(live.state)
+      : h('button', { class: `icon-btn${brainstormUI.options ? ' on' : ''}`, 'aria-label': 'Options', 'aria-expanded': String(brainstormUI.options), onclick: () => { brainstormUI.options = !brainstormUI.options; render(); } }, icon('options'))),
     brainstormUI.options && room.mode !== 'live' ? brainstormOptions() : null, room.mode === 'live' ? agentStrip(live.state) : panelStrip());
 
-  if (room.mode === 'live') return h('div', { class: 'brainstorm' }, header, liveView());
+  if (room.mode === 'live') return h('div', { class: 'brainstorm live' }, header, liveView());
   if (room.mode === 'video') return h('div', { class: 'brainstorm video' }, header, meetingView(sendDraft));
 
   const composerInput = h('textarea', { class: 'field composer-input', rows: 1, placeholder: 'Ask the panel…', 'aria-label': 'Ask the panel', value: brainstormUI.draft,
@@ -552,6 +553,10 @@ function buildStage() {
     for (const p of PANELISTS) {
       const cached = store.get(`face.${p.id}`, null);
       if (cached) { faces[p.id] = cached; continue; }
+      // Landmarks computed ahead of time ship with the app (public/landmarks), so a phone never has to download
+      // and run the 6 MB face detector just to see the portraits.
+      const shipped = await fetch(`/landmarks/${p.id}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (shipped?.landmarks?.length) { faces[p.id] = shipped; store.set(`face.${p.id}`, shipped); syncPanel(); continue; }
       try {
         const blob = await (await fetch(`/portraits/${p.id}.jpg`)).blob();
         const dataUrl = await new Promise((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(blob); });

@@ -4,11 +4,12 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createReadStream, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { brotliCompress } from 'node:zlib';
 import http from 'node:http';
 import { homedir } from 'node:os';
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PROVIDERS, SECTIONS } from './public/shared.js';
+import { PANELISTS, PROVIDERS, SECTIONS } from './public/shared.js';
 import { FrontierStore } from './lib/store.mjs';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
@@ -67,14 +68,39 @@ async function readBody(req) {
   return chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {};
 }
 
-function serveFile(res, file, root, csp) {
+// Files that compress well. Photos and the .task model are already compressed, so they go out as they are.
+const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.wasm']);
+const brotliCache = new Map(); // "path:mtime" → Promise<Buffer>, so each file is compressed once
+
+/**
+ * Sends a file. It carries an ETag, so a browser that already has it gets a 304 instead of the bytes, and it is brotli
+ * compressed for clients that accept it. `maxAge` lets files that rarely change (the face library, models and
+ * portraits) be kept for that many seconds without asking; the rest are checked every time.
+ */
+async function serveFile(req, res, file, root, csp, { maxAge = 0 } = {}) {
   const path = resolve(file);
   if (path !== root && !path.startsWith(root + sep)) return sendJSON(res, 403, { error: 'Forbidden' });
   let info;
   try { info = statSync(path); } catch { return sendJSON(res, 404, { error: 'Not found' }); }
   if (!info.isFile()) return sendJSON(res, 404, { error: 'Not found' });
-  res.writeHead(200, { 'content-type': MIME[extname(path)] ?? 'application/octet-stream', 'content-length': info.size,
-    'cache-control': 'no-cache', 'content-security-policy': csp, 'x-content-type-options': 'nosniff' });
+
+  const ext = extname(path);
+  const etag = `W/"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}"`;
+  const headers = { etag, 'cache-control': maxAge ? `public, max-age=${maxAge}` : 'no-cache', vary: 'Accept-Encoding',
+    'content-type': MIME[ext] ?? 'application/octet-stream', 'content-security-policy': csp, 'x-content-type-options': 'nosniff' };
+  if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
+
+  if (COMPRESSIBLE.has(ext) && info.size > 1024 && /\bbr\b/.test(req.headers['accept-encoding'] ?? '')) {
+    const key = `${path}:${info.mtimeMs}`;
+    if (!brotliCache.has(key)) {
+      brotliCache.set(key, readFile(path).then((raw) => new Promise((ok, fail) => brotliCompress(raw, { params: { 1: 5 } }, (e, out) => (e ? fail(e) : ok(out))))));
+    }
+    const out = await brotliCache.get(key);
+    res.writeHead(200, { ...headers, 'content-encoding': 'br', 'content-length': out.length });
+    return res.end(req.method === 'HEAD' ? undefined : out);
+  }
+  res.writeHead(200, { ...headers, 'content-length': info.size });
+  if (req.method === 'HEAD') return res.end();
   createReadStream(path).pipe(res);
 }
 
@@ -160,6 +186,15 @@ const ROUTES = {
     const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
     req.on('close', () => { clearInterval(ping); store.live.off('change', onChange); });
   },
+  // Only when SOOFRONTIER_DEV is set: lets the page save the portrait landmarks it detected into public/landmarks,
+  // so they can be shipped instead of detected on every phone. Regenerate them after changing a portrait.
+  ...(process.env.SOOFRONTIER_DEV ? { 'POST /api/dev/landmarks': (req, res, body) => {
+    const ok = PANELISTS.some((p) => p.id === body.id) && body.landmarks?.length === 478 && body.landmarks.every((l) => l.length === 2 && l.every(Number.isFinite));
+    if (!ok) return sendJSON(res, 400, { error: 'Expected { id, width, height, landmarks: 478 × [x, y] }' });
+    writeFileSync(join(PUBLIC, 'landmarks', `${body.id}.json`), JSON.stringify({ width: body.width, height: body.height, landmarks: body.landmarks }) + '\n');
+    sendJSON(res, 200, {});
+  } } : {}),
+
   'POST /api/live/start': (req, res, body) => { store.live.start(body.topic); sendJSON(res, 200, {}); },
   'POST /api/live/pause': (req, res) => { store.live.pause(); sendJSON(res, 200, {}); },
   'POST /api/live/resume': (req, res) => { store.live.resume(); sendJSON(res, 200, {}); },
@@ -220,9 +255,9 @@ async function handle(req, res) {
 
   const path = decodeURIComponent(url.pathname);
   if (path === '/stage.html') return serveStageHTML(res);
-  if (path === '/stage.js' || /^\/(avatar|vendor|models)\//.test(path)) return serveFile(res, join(STAGE, path), STAGE, STAGE_CSP);
-  if (path.startsWith('/portraits/')) return serveFile(res, join(NATIVE, 'Portraits', path.slice(11)), join(NATIVE, 'Portraits'), STAGE_CSP);
-  return serveFile(res, join(PUBLIC, path === '/' ? 'index.html' : path), PUBLIC, APP_CSP);
+  if (path === '/stage.js' || /^\/(avatar|vendor|models)\//.test(path)) return serveFile(req, res, join(STAGE, path), STAGE, STAGE_CSP, { maxAge: path === '/stage.js' ? 0 : 86400 });
+  if (path.startsWith('/portraits/')) return serveFile(req, res, join(NATIVE, 'Portraits', path.slice(11)), join(NATIVE, 'Portraits'), STAGE_CSP, { maxAge: 86400 });
+  return serveFile(req, res, join(PUBLIC, path === '/' ? 'index.html' : path), PUBLIC, APP_CSP, { maxAge: path.startsWith('/landmarks/') ? 86400 : 0 });
 }
 
 const server = http.createServer((req, res) => {
