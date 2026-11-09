@@ -294,7 +294,7 @@ struct ListenerAgent: HarvestAgent {
     }
 
     static let system = """
-    You are the Listener agent in SooFrontier, an app for AI researchers. Use X search to read recent posts. \
+    You are the Listener agent in SooFrontier, an app for AI researchers. Use web search to find recent posts on X (x.com). \
     Reply ONLY with a JSON array, with no prose before or after it.
     """
 
@@ -317,7 +317,8 @@ struct ListenerAgent: HarvestAgent {
                 group.addTask {
                     let handles = batch.map { "@\($0.handle)" }.joined(separator: ", ")
                     let prompt = """
-                    Use X search on posts from these accounts in the last 7 days: \(handles).
+                    Today is \(Date.now.formatted(.iso8601.year().month().day())). Use web search to find posts on X (x.com) \
+                    from these accounts in the last 7 days: \(handles).
                     For each account, summarize their most notable opinion about AI.
                     Reply ONLY with a JSON array of objects with keys: name, handle (without @), headline (at most 12 words), \
                     summary (2 sentences), url (link to the post on x.com), date (ISO 8601).

@@ -146,11 +146,13 @@ enum CLIRunner {
             if !model.isEmpty { args += ["-m", model] }
             args.append(combined)
         case .xai:
-            // The strict sandbox confines reads and writes to the empty scratch folder, and with no
-            // --always-approve a headless run refuses shell commands. Research mode adds searches of X and the web.
+            // The strict sandbox confines reads and writes to the empty scratch folder, and Grok gets no file,
+            // shell or add-on tools at all. Research mode allows web search, which xAI runs on its side and
+            // which covers posts on X, plus web fetch.
             args = ["--no-auto-update", "--no-alt-screen", "--output-format", "streaming-json",
-                    "--max-turns", research ? "8" : "1", "--cwd", work.path, "--sandbox", "strict"]
-            if research { args += ["--allow", "WebSearch", "--allow", "WebFetch"] }
+                    "--max-turns", research ? "8" : "1", "--cwd", work.path, "--sandbox", "strict",
+                    "--tools", research ? "web_search,web_fetch" : "web_fetch", "--disallowed-tools", "search_tool,use_tool"]
+            args += research ? ["--allow", "WebSearch", "--allow", "WebFetch"] : ["--disable-web-search"]
             if !model.isEmpty { args += ["-m", model] }
             args += ["-p", combined]
         }
