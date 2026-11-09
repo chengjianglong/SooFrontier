@@ -2,7 +2,7 @@
 import { PANELISTS, agentColor } from './shared.js';
 import { api, h, icon, inline } from './ui.js';
 
-export const live = { config: { starters: [] }, editing: null, edit: null, state: null, turns: [], draft: null, error: null, topic: '', say: '', notes: false, onChange() {} };
+export const live = { config: { starters: [], presets: {} }, optionsOpen: null, editing: null, edit: null, state: null, turns: [], draft: null, error: null, topic: '', say: '', notes: false, onChange() {} };
 let source = null;
 
 const seat = (id) => PANELISTS.find((p) => p.id === id);
@@ -74,6 +74,20 @@ function agentPopover(s, a) {
     h('p', { class: 'caption muted' }, 'Applies from this agent’s next turn.'));
 }
 
+const OPTION_ROWS = [['length', 'Reply length'], ['pace', 'Pace'], ['memory', 'Memory']];
+
+/** Room-wide settings. Their choices and values come from live-config.json; each click applies from the next turn. */
+function optionsPopover(s) {
+  const presets = live.config.presets;
+  return h('div', { class: 'popover', role: 'dialog', 'aria-label': 'Discussion settings', style: { left: `${live.optionsOpen.left}px`, top: `${live.optionsOpen.top}px` }, onclick: (e) => e.stopPropagation() },
+    h('div', { class: 'popover-head' }, h('strong', {}, 'Discussion settings'),
+      h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => { live.optionsOpen = null; live.onChange(); } }, icon('close', 16))),
+    OPTION_ROWS.map(([key, label]) => h('div', { class: 'popover-field' }, h('span', { class: 'eyebrow strong' }, label),
+      h('div', { class: 'segmented', role: 'group', 'aria-label': label }, Object.entries(presets[key] ?? {}).map(([id, p]) =>
+        h('button', { class: s?.options?.[key] === id ? 'on' : '', 'aria-pressed': String(s?.options?.[key] === id), onclick: () => act('/api/live/options', { [key]: id }) }, p.label))))),
+    h('p', { class: 'caption muted' }, 'Applies from the next turn. What an agent remembers is also capped by size, so prompts fit a small model’s context window.'));
+}
+
 function agentStrip(s) {
   return h('div', { class: 'panel-strip' }, (s?.agents ?? PANELISTS.map((p) => ({ id: p.id, model: null }))).map((a) => {
     const p = seat(a.id);
@@ -84,6 +98,7 @@ function agentStrip(s) {
         'aria-label': `${p.name}${a.model ? `, ${a.model}` : ''}. Change model and characteristic`, title: 'Change model and characteristic',
         onclick: (e) => {
           e.stopPropagation();
+          live.optionsOpen = null;
           if (live.editing === a.id) { live.editing = null; live.edit = null; }
           else {
             // Fixed coordinates from the chip, because the strip scrolls sideways and would clip an absolute popover.
@@ -96,12 +111,22 @@ function agentStrip(s) {
         h('span', { class: `badge small${talking ? ' pulse' : ''}` }, p.name[0]),
         h('span', { class: 'chip-text' }, h('strong', {}, p.name), h('span', {}, a.model ? `Local · ${a.model}` : 'Local'))),
       open ? agentPopover(s, a) : null);
-  }));
+  }).concat(h('div', { class: 'chip-wrap' },
+    h('button', { class: `panel-chip on${live.optionsOpen ? ' open' : ''}`, 'aria-haspopup': 'dialog', 'aria-expanded': String(Boolean(live.optionsOpen)), 'aria-label': 'Discussion settings', title: 'Discussion settings',
+      onclick: (e) => {
+        e.stopPropagation();
+        live.editing = null; live.edit = null;
+        if (live.optionsOpen) live.optionsOpen = null;
+        else { const r = e.currentTarget.getBoundingClientRect(); live.optionsOpen = { left: Math.max(16, Math.min(r.left, innerWidth - 356)), top: r.bottom + 8 }; }
+        live.onChange();
+      } },
+      h('span', { class: 'chip-text' }, h('strong', {}, 'Settings'), h('span', {}, s?.options ? `${live.config.presets.length?.[s.options.length]?.label ?? ''} replies` : '…'))),
+    live.optionsOpen && s?.options ? optionsPopover(s) : null)));
 }
 
 // A click anywhere else, or Escape, closes the popover.
-document.addEventListener('click', () => { if (live.editing) { live.editing = null; live.edit = null; live.onChange(); } });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && live.editing) { live.editing = null; live.edit = null; live.onChange(); } });
+document.addEventListener('click', () => { if (live.editing || live.optionsOpen) { live.editing = null; live.edit = null; live.optionsOpen = null; live.onChange(); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (live.editing || live.optionsOpen)) { live.editing = null; live.edit = null; live.optionsOpen = null; live.onChange(); } });
 
 function notesView(s) {
   return h('div', { class: 'live-notes' }, h('p', { class: 'caption muted' }, 'Each agent’s private notes: what it keeps in mind between turns, rewritten every few turns on its own model.'),

@@ -11,6 +11,8 @@ import { cleanReply } from './prompts.mjs';
 const CONFIG = JSON.parse(readFileSync(new URL('../public/live-config.json', import.meta.url), 'utf8'));
 const ORDER = CONFIG.order;
 const T = CONFIG.tuning;
+const PRESETS = CONFIG.presets; // length, pace and memory choices, each with its values
+
 
 const sleep = (ms, signal) => new Promise((resolve) => {
   const t = setTimeout(resolve, ms);
@@ -32,7 +34,7 @@ export function overlap(a, b) {
 
 export class AgentRoom extends EventEmitter {
   #config; #persist; #ctl = null; #gen = 0; #override = null;
-  id = null; topic = ''; status = 'idle'; speaking = null; error = null; turns = []; agents = {}; cursor = 0; stale = false; draft = null;
+  id = null; topic = ''; status = 'idle'; speaking = null; error = null; turns = []; agents = {}; cursor = 0; stale = false; draft = null; options = { ...CONFIG.defaults };
 
   /**
    * config() → { url, installed, main } or throws; persist(state) saves; saved is the last saved state.
@@ -44,6 +46,7 @@ export class AgentRoom extends EventEmitter {
     this.#persist = persist;
     this.agents = this.#blank();
     if (saved) for (const id of ORDER) Object.assign(this.agents[id], saved.agents?.[id]);
+    for (const key of Object.keys(PRESETS)) if (PRESETS[key][saved?.options?.[key]]) this.options[key] = saved.options[key];
     if (saved?.topic) {
       Object.assign(this, { id: saved.id, topic: saved.topic, turns: saved.turns ?? [], cursor: saved.cursor ?? 0 });
       this.status = saved.status === 'idle' ? 'idle' : 'paused'; // a restart never resumes on its own
@@ -61,7 +64,7 @@ export class AgentRoom extends EventEmitter {
     return {
       id: this.id, topic: this.topic, status: this.status, speaking: this.speaking, error: this.error, total: this.turns.length, draft: this.draft,
       turns: last ? this.turns.slice(-last) : [], // slice(-0) would return everything
-      installed: cfg.installed, main: cfg.main,
+      installed: cfg.installed, main: cfg.main, options: this.options,
       agents: ORDER.map((id) => {
         const a = this.agents[id], seat = PANELISTS.find((p) => p.id === id);
         return { id, name: seat.name, model: this.#modelOf(a, cfg), customModel: Boolean(a.model), viewpoint: a.viewpoint ?? seat.viewpoint, custom: Boolean(a.viewpoint),
@@ -74,7 +77,7 @@ export class AgentRoom extends EventEmitter {
 
   #emit(kind, data = {}) { this.emit('change', { kind, ...data }); }
   #save() {
-    this.#persist({ id: this.id, topic: this.topic, status: this.status, cursor: this.cursor, agents: this.agents, turns: this.turns.slice(-T.maxKeptTurns) });
+    this.#persist({ id: this.id, topic: this.topic, status: this.status, cursor: this.cursor, agents: this.agents, options: this.options, turns: this.turns.slice(-T.maxKeptTurns) });
   }
 
   start(topic) {
@@ -136,6 +139,20 @@ export class AgentRoom extends EventEmitter {
     this.#emit('state');
   }
 
+  /** Reply length, pace and memory for the whole room; each takes effect on the next turn. */
+  setOptions(patch = {}) {
+    for (const key of Object.keys(PRESETS)) {
+      if (patch[key] === undefined) continue;
+      if (!PRESETS[key][patch[key]]) throw new Error(`Unknown ${key} setting: ${patch[key]}`);
+      this.options[key] = patch[key];
+    }
+    this.#save();
+    this.#emit('state');
+  }
+
+  #length() { return PRESETS.length[this.options.length]; }
+  #memoryTurns() { return PRESETS.memory[this.options.memory].turns; }
+
   #add(turn) {
     const t = { n: (this.turns.at(-1)?.n ?? 0) + 1, at: new Date().toISOString(), ...turn };
     this.turns.push(t);
@@ -166,6 +183,7 @@ export class AgentRoom extends EventEmitter {
           this.agents[seat.id].spoke++;
           this.cursor++;
           this.#add({ speaker: seat.id, text, model });
+          await sleep(PRESETS.pace[this.options.pace].delayMs, ctl.signal);
         } catch (e) {
           this.draft = null;
           if (ctl.signal.aborted || this.status !== 'running') break;
@@ -190,7 +208,7 @@ export class AgentRoom extends EventEmitter {
   #who(t) { return t.speaker === 'human' ? 'Human' : t.speaker === 'system' ? 'Note' : PANELISTS.find((p) => p.id === t.speaker).name; }
 
   #window() {
-    const lines = this.turns.slice(-T.windowTurns).map((t) => `${this.#who(t)}: ${t.text}`);
+    const lines = this.turns.slice(-this.#memoryTurns()).map((t) => `${this.#who(t)}: ${t.text}`);
     let out = lines.join('\n\n');
     if (out.length > T.windowChars) out = '…' + out.slice(-T.windowChars);
     return out;
@@ -215,19 +233,19 @@ export class AgentRoom extends EventEmitter {
     const llm = this.#client(seat);
     await this.#updateNotes(seat, llm, signal);
     const others = PANELISTS.filter((p) => p.id !== seat.id).map((p) => p.name).join(', ');
-    const humanSpoke = this.turns.slice(-T.windowTurns).some((t) => t.speaker === 'human');
+    const humanSpoke = this.turns.slice(-this.#memoryTurns()).some((t) => t.speaker === 'human');
     const role = seat.id === 'synthesizer'
       ? `You moderate: name the real disagreement in a sentence, then push the group to a sharper question or a decision.${this.stale ? ' The discussion has started repeating itself, so open a genuinely new angle or sub-question.' : ''}`
       : 'Move the argument forward with a point nobody has made yet.';
     const system = `You are ${seat.name} in a never-ending roundtable with ${others} on the topic: "${this.topic}". ${this.#viewpoint(seat)}
-Speak in first person as ${seat.name}, in ${T.replyWords[0]} to ${T.replyWords[1]} words of plain prose: no headings, no bullet lists, no name prefix. Respond to something specific another member or the human just said. ${role} Never repeat what has been said. Disagree when you really do, and concede when convinced.${humanSpoke ? ' The human has spoken: answer them directly before anything else.' : ''}`;
+Speak in first person as ${seat.name}, in ${this.#length().words[0]} to ${this.#length().words[1]} words of plain prose: no headings, no bullet lists, no name prefix. Respond to something specific another member or the human just said. ${role} Never repeat what has been said. Disagree when you really do, and concede when convinced.${humanSpoke ? ' The human has spoken: answer them directly before anything else.' : ''}`;
     const a = this.agents[seat.id];
     const prompt = `${a.memory ? `Your private notes:\n${a.memory}\n\n` : ''}${this.turns.length ? `Recent discussion:\n${this.#window()}` : `The topic is: ${this.topic}\nYou open the discussion.`}\n\nIt is your turn, ${seat.name}.`;
 
     // Tokens stream out to every viewer as they arrive; the finished reply becomes a turn.
     const say = async (sys) => {
       this.draft = { speaker: seat.id, text: '', model: llm.model };
-      const out = await llm.stream({ system: sys, prompt, maxTokens: T.replyMaxTokens, signal, onDelta: (partial) => {
+      const out = await llm.stream({ system: sys, prompt, maxTokens: this.#length().maxTokens, signal, onDelta: (partial) => {
         if (this.draft) this.draft.text = cleanReply(partial, seat.name);
         this.#emit('delta', { speaker: seat.id, text: cleanReply(partial, seat.name), model: llm.model });
       } });

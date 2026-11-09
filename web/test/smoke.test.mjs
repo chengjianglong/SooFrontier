@@ -109,6 +109,18 @@ test('changing an agent takes effect on its next turn and shows in the state at 
   assert.equal(reset.custom, false);
 });
 
+test('discussion settings are validated, applied and kept', async () => {
+  const defaults = (await live()).options;
+  assert.deepEqual(defaults, { length: 'medium', pace: 'fast', memory: 'normal' });
+  const bad = await post('/api/live/options', { length: 'enormous' });
+  assert.equal(bad.status, 500);
+  assert.match((await bad.json()).error, /Unknown length/);
+  assert.equal((await post('/api/live/options', { length: 'long', memory: 'short' })).status, 200);
+  assert.deepEqual((await live()).options, { length: 'long', pace: 'fast', memory: 'short' });
+  assert.ok(events.some((e) => e.kind === 'state' && e.data.options?.length === 'long'), 'the change is pushed to the page');
+  await post('/api/live/options', { length: 'medium', memory: 'normal' });
+});
+
 test('pause stops new turns and resume continues', async () => {
   await post('/api/live/pause');
   assert.equal((await live()).status, 'paused');

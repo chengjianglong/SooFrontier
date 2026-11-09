@@ -4,15 +4,18 @@
     "Is scaling still the main driver of AI progress?",
     "What should an AI researcher build this week?"
   ],
-  "order": ["skeptic", "builder", "contrarian", "archivist", "synthesizer"],
+  "order": [
+    "skeptic",
+    "builder",
+    "contrarian",
+    "archivist",
+    "synthesizer"
+  ],
   "tuning": {
-    "windowTurns": 10,
     "windowChars": 6000,
     "notesEvery": 6,
     "notesMaxChars": 1200,
     "notesMaxTokens": 350,
-    "replyMaxTokens": 400,
-    "replyWords": [40, 90],
     "overlapThreshold": 0.4,
     "overlapLookback": 6,
     "maxKeptTurns": 2000,
@@ -20,5 +23,66 @@
     "retryDelayMs": 3000,
     "topicMaxChars": 500,
     "sayMaxChars": 1000
+  },
+  "presets": {
+    "length": {
+      "short": {
+        "label": "Short",
+        "words": [
+          20,
+          40
+        ],
+        "maxTokens": 160
+      },
+      "medium": {
+        "label": "Medium",
+        "words": [
+          40,
+          90
+        ],
+        "maxTokens": 400
+      },
+      "long": {
+        "label": "Long",
+        "words": [
+          100,
+          180
+        ],
+        "maxTokens": 700
+      }
+    },
+    "pace": {
+      "fast": {
+        "label": "Full speed",
+        "delayMs": 0
+      },
+      "relaxed": {
+        "label": "Relaxed",
+        "delayMs": 3000
+      },
+      "slow": {
+        "label": "Slow",
+        "delayMs": 10000
+      }
+    },
+    "memory": {
+      "short": {
+        "label": "Short",
+        "turns": 6
+      },
+      "normal": {
+        "label": "Normal",
+        "turns": 10
+      },
+      "long": {
+        "label": "Long",
+        "turns": 20
+      }
+    }
+  },
+  "defaults": {
+    "length": "medium",
+    "pace": "fast",
+    "memory": "normal"
   }
 }
