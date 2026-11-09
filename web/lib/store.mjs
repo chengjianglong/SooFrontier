@@ -84,7 +84,7 @@ export class FrontierStore extends EventEmitter {
       keys: s.keys ?? {}, models: s.models ?? {}, modes: s.modes ?? {}, cliModels: s.cliModels ?? {},
       synthesizerProvider: s.synthesizerProvider ?? 'anthropic', skepticProvider: s.skepticProvider ?? 'openai',
       agentsOff: s.agentsOff ?? [], saved: s.saved ?? [], voices: s.voices ?? VOICE_STARTERS,
-      local: { url: LOCAL.defaultURL, model: LOCAL.defaultModel, fastModel: LOCAL.defaultFastModel, prefer: false, agentModels: {}, ...s.local,
+      local: { url: LOCAL.defaultURL, model: LOCAL.defaultModel, fastModel: LOCAL.defaultFastModel, prefer: false, ...s.local,
         councilModels: { ...COUNCIL_DEFAULT_MODELS, ...s.local?.councilModels } },
     };
     const c = loadJSON('cache.json', {});
@@ -96,15 +96,13 @@ export class FrontierStore extends EventEmitter {
     this.live = new AgentRoom({ config: () => this.liveConfig(), persist: (state) => saveJSON('live-room.json', state), saved: loadJSON('live-room.json', null) });
   }
 
-  /** Each Brainstorm Live agent's model: the one chosen for it in Settings, else the main local model. */
+  /** What the live room needs from the local server. Each agent's own model and characteristic live in the room. */
   liveConfig() {
     const l = this.settings.local;
     const have = this.localInstalled;
     if (!l.url || !have) throw new Error(`Can't reach the local model server${l.url ? ` at ${l.url}` : ''}. Set it up in Settings → Local models.`);
     if (!have.includes(l.model)) throw new Error(`The main local model ${l.model} isn't on the server. Choose one in Settings → Local models.`);
-    const models = {};
-    for (const p of PANELISTS) { const m = l.agentModels?.[p.id]; models[p.id] = m && have.includes(m) ? m : l.model; }
-    return { url: l.url, models };
+    return { url: l.url, installed: have, main: l.model };
   }
 
   // MARK: Providers
@@ -212,14 +210,6 @@ export class FrontierStore extends EventEmitter {
           const m = l.councilModels[seat.id];
           if (m === '') delete s.local.councilModels[seat.id];
           else if (typeof m === 'string' && m.trim()) s.local.councilModels[seat.id] = m.trim();
-        }
-      }
-      if (l.agentModels && typeof l.agentModels === 'object') {
-        // An empty value puts that agent back on the main model.
-        s.local.agentModels = { ...s.local.agentModels };
-        for (const p of PANELISTS) if (typeof l.agentModels[p.id] === 'string') {
-          const m = l.agentModels[p.id].trim();
-          if (m) s.local.agentModels[p.id] = m; else delete s.local.agentModels[p.id];
         }
       }
     }
@@ -505,6 +495,8 @@ export class FrontierStore extends EventEmitter {
 
   /** Refreshes at 6:00 am Pacific, and on start or after sleep if that run was missed. */
   startSchedule() {
+    // Tests set this so starting the server never goes out to the news feeds.
+    if (process.env.SOOFRONTIER_NO_REFRESH) { this.refreshLocal(); return; }
     const check = () => { if (this.isDue()) this.refresh(); };
     this.refreshLocal().then(() => { if (!this.items.length) this.refresh(); else check(); });
     setInterval(() => this.refreshLocal(), 60_000).unref?.();

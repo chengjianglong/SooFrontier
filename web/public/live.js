@@ -2,7 +2,7 @@
 import { PANELISTS, agentColor } from './shared.js';
 import { api, h, icon, inline } from './ui.js';
 
-export const live = { config: { starters: [] }, state: null, turns: [], draft: null, error: null, topic: '', say: '', notes: false, onChange() {} };
+export const live = { config: { starters: [] }, editing: null, edit: null, state: null, turns: [], draft: null, error: null, topic: '', say: '', notes: false, onChange() {} };
 let source = null;
 
 const seat = (id) => PANELISTS.find((p) => p.id === id);
@@ -38,6 +38,7 @@ export function connectLive() {
 const act = async (path, body) => { live.error = null; try { await api(path, body ?? {}); } catch (e) { live.error = e.message; live.onChange(); } };
 
 function bubble(t) {
+  if (t.speaker === 'system') return h('p', { class: 'caption muted live-note' }, t.text);
   if (t.speaker === 'human') return h('div', { class: 'bubble-user' }, h('p', {}, t.text));
   const p = seat(t.speaker);
   return h('div', { class: 'bubble-agent' }, h('span', { class: 'badge', style: { '--agent': agentColor(p.agent) } }, p.name[0]),
@@ -52,16 +53,55 @@ function draftBubble(d) {
       h('p', { class: 'serif draft-text' }, inline(d.text || '…'))));
 }
 
+/** The popover under a chip: switch that agent's model and its characteristic (the persona it speaks from). */
+function agentPopover(s, a) {
+  const p = seat(a.id);
+  const d = live.edit;
+  const models = [...new Set([...(s.installed ?? []), a.model].filter(Boolean))];
+  const close = () => { live.editing = null; live.edit = null; live.onChange(); };
+  const save = async () => { await act('/api/live/agent', { id: a.id, model: d.model, viewpoint: d.viewpoint }); close(); };
+  return h('div', { class: 'popover', role: 'dialog', 'aria-label': `${p.name} settings`, style: { left: `${d.left}px`, top: `${d.top}px` }, onclick: (e) => e.stopPropagation() },
+    h('div', { class: 'popover-head' }, h('strong', {}, p.name), h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: close }, icon('close', 16))),
+    h('label', { class: 'popover-field' }, h('span', { class: 'eyebrow strong' }, 'Model'),
+      h('select', { class: 'field', 'aria-label': `${p.name} model`, onchange: (e) => { d.model = e.target.value; } },
+        models.map((m) => h('option', { value: m, selected: m === d.model }, m === s.main ? `${m} (main)` : m)))),
+    h('label', { class: 'popover-field' }, h('span', { class: 'eyebrow strong' }, 'Characteristic'),
+      h('textarea', { class: 'field', rows: 5, 'aria-label': `${p.name} characteristic`, value: d.viewpoint, oninput: (e) => { d.viewpoint = e.target.value; } })),
+    a.memory ? h('p', { class: 'caption muted' }, h('strong', {}, 'Notes: '), a.memory) : null,
+    h('div', { class: 'popover-actions' },
+      h('button', { class: 'btn small accent', onclick: save }, 'Save'),
+      h('button', { class: 'btn small', disabled: !a.custom && d.viewpoint === a.defaultViewpoint, onclick: () => { d.viewpoint = a.defaultViewpoint; live.onChange(); } }, 'Reset characteristic')),
+    h('p', { class: 'caption muted' }, 'Applies from this agent’s next turn.'));
+}
+
 function agentStrip(s) {
   return h('div', { class: 'panel-strip' }, (s?.agents ?? PANELISTS.map((p) => ({ id: p.id, model: null }))).map((a) => {
     const p = seat(a.id);
     const talking = s?.status === 'running' && s.speaking === a.id;
-    return h('button', { class: `panel-chip on${talking ? ' talking' : ''}`, style: { '--agent': agentColor(p.agent) }, 'aria-label': `${p.name}${a.model ? `, ${a.model}` : ''}`,
-      title: 'Show each agent’s private notes', onclick: () => { live.notes = !live.notes; live.onChange(); } },
-      h('span', { class: `badge small${talking ? ' pulse' : ''}` }, p.name[0]),
-      h('span', { class: 'chip-text' }, h('strong', {}, p.name), h('span', {}, a.model ? `Local · ${a.model}` : 'Local')));
+    const open = live.editing === a.id && s?.agents;
+    return h('div', { class: 'chip-wrap' },
+      h('button', { class: `panel-chip on${talking ? ' talking' : ''}${open ? ' open' : ''}`, style: { '--agent': agentColor(p.agent) }, 'aria-haspopup': 'dialog', 'aria-expanded': String(Boolean(open)),
+        'aria-label': `${p.name}${a.model ? `, ${a.model}` : ''}. Change model and characteristic`, title: 'Change model and characteristic',
+        onclick: (e) => {
+          e.stopPropagation();
+          if (live.editing === a.id) { live.editing = null; live.edit = null; }
+          else {
+            // Fixed coordinates from the chip, because the strip scrolls sideways and would clip an absolute popover.
+            const r = e.currentTarget.getBoundingClientRect();
+            live.editing = a.id;
+            live.edit = { model: a.model ?? s?.main, viewpoint: a.viewpoint ?? '', left: Math.max(16, Math.min(r.left, innerWidth - 356)), top: r.bottom + 8 };
+          }
+          live.onChange();
+        } },
+        h('span', { class: `badge small${talking ? ' pulse' : ''}` }, p.name[0]),
+        h('span', { class: 'chip-text' }, h('strong', {}, p.name), h('span', {}, a.model ? `Local · ${a.model}` : 'Local'))),
+      open ? agentPopover(s, a) : null);
   }));
 }
+
+// A click anywhere else, or Escape, closes the popover.
+document.addEventListener('click', () => { if (live.editing) { live.editing = null; live.edit = null; live.onChange(); } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && live.editing) { live.editing = null; live.edit = null; live.onChange(); } });
 
 function notesView(s) {
   return h('div', { class: 'live-notes' }, h('p', { class: 'caption muted' }, 'Each agent’s private notes: what it keeps in mind between turns, rewritten every few turns on its own model.'),

@@ -670,8 +670,7 @@ function viewSettings() {
       return select(seat.title.replace(/^The /, ''), [['', `Main model (${shortModel(L.model)})`], ...localModelOptions(own || L.model)], own,
         (m) => setLocal({ councilModels: { [seat.id]: m } }), missing ? 'Not downloaded, so the main model stands in' : null);
     }),
-    h('p', { class: 'caption muted' }, 'Live discussion: the model each agent speaks with. Unset means the main model.'),
-    PANELISTS.map((p) => select(p.name, [['', `Main model (${L.model})`], ...localModelOptions(L.agentModels?.[p.id] ?? '').filter(([m]) => m)], L.agentModels?.[p.id] ?? '', (m) => setLocal({ agentModels: { [p.id]: m } }))),
+    h('p', { class: 'caption muted' }, 'To give each Live discussion agent its own model and characteristic, click it in Brainstorm → Live discussion.'),
     h('label', { class: 'setting-row' }, h('span', {}, 'Prefer local models'), h('input', { type: 'checkbox', class: 'switch', 'aria-label': 'Prefer local models', checked: L.prefer, onchange: (e) => setLocal({ prefer: e.target.checked }) })),
     h('p', { class: 'caption muted' }, 'An Ollama server on your own GPU machine, such as a DGX Spark / GB10, on this network or over a VPN. The main model writes briefs and digests, the fast model writes quick reads, and the Frontier Council and Brainstorm always run on it, at no plan or API cost. It steps in whenever Claude, GPT or Grok can’t be reached, or answers first when “Prefer local models” is on. Live X and web research always uses Grok.'),
     h('div', { class: 'setting-row start' }, h('button', { class: 'btn small', disabled: !L.configured, onclick: async (e) => {

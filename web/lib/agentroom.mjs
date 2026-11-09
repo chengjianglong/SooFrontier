@@ -31,29 +31,46 @@ export function overlap(a, b) {
 }
 
 export class AgentRoom extends EventEmitter {
-  #config; #persist; #ctl = null; #gen = 0;
+  #config; #persist; #ctl = null; #gen = 0; #override = null;
   id = null; topic = ''; status = 'idle'; speaking = null; error = null; turns = []; agents = {}; cursor = 0; stale = false; draft = null;
 
-  /** config() → { url, models: {agentId: model} } or throws; persist(state) saves; saved is the last saved state. */
+  /**
+   * config() → { url, installed, main } or throws; persist(state) saves; saved is the last saved state.
+   * The room owns each agent's model and characteristic: configure() is the one way to change them.
+   */
   constructor({ config, persist, saved }) {
     super();
     this.#config = config;
     this.#persist = persist;
+    this.agents = this.#blank();
+    if (saved) for (const id of ORDER) Object.assign(this.agents[id], saved.agents?.[id]);
     if (saved?.topic) {
-      Object.assign(this, { id: saved.id, topic: saved.topic, turns: saved.turns ?? [], agents: saved.agents ?? {}, cursor: saved.cursor ?? 0 });
+      Object.assign(this, { id: saved.id, topic: saved.topic, turns: saved.turns ?? [], cursor: saved.cursor ?? 0 });
       this.status = saved.status === 'idle' ? 'idle' : 'paused'; // a restart never resumes on its own
     }
   }
 
+  /** Fresh notes for every agent; model and viewpoint null mean "the main model" and "the persona's default". */
+  #blank(keep = {}) {
+    return Object.fromEntries(ORDER.map((id) => [id, { memory: '', upTo: 0, spoke: 0, model: keep[id]?.model ?? null, viewpoint: keep[id]?.viewpoint ?? null }]));
+  }
+
   snapshot(last = 300) {
-    let models = {};
-    try { models = this.#config().models; } catch {}
+    let cfg = { installed: [], main: null };
+    try { cfg = this.#config(); } catch {}
     return {
       id: this.id, topic: this.topic, status: this.status, speaking: this.speaking, error: this.error, total: this.turns.length, draft: this.draft,
       turns: last ? this.turns.slice(-last) : [], // slice(-0) would return everything
-      agents: ORDER.map((id) => ({ id, model: models[id] ?? null, memory: this.agents[id]?.memory ?? '', turns: this.agents[id]?.spoke ?? 0 })),
+      installed: cfg.installed, main: cfg.main,
+      agents: ORDER.map((id) => {
+        const a = this.agents[id], seat = PANELISTS.find((p) => p.id === id);
+        return { id, name: seat.name, model: this.#modelOf(a, cfg), customModel: Boolean(a.model), viewpoint: a.viewpoint ?? seat.viewpoint, custom: Boolean(a.viewpoint),
+          defaultViewpoint: seat.viewpoint, memory: a.memory, turns: a.spoke };
+      }),
     };
   }
+
+  #modelOf(a, cfg) { return a.model && cfg.installed.includes(a.model) ? a.model : cfg.main; }
 
   #emit(kind, data = {}) { this.emit('change', { kind, ...data }); }
   #save() {
@@ -66,7 +83,7 @@ export class AgentRoom extends EventEmitter {
     this.#config(); // fail now, with a clear message, if the local server isn't ready
     this.#ctl?.abort();
     Object.assign(this, { id: Date.now().toString(36), topic, turns: [], cursor: 0, stale: false, error: null, speaking: null, status: 'running',
-      agents: Object.fromEntries(ORDER.map((id) => [id, { memory: '', upTo: 0, spoke: 0 }])) });
+      agents: this.#blank(this.agents) }); // a new topic starts with clean notes but keeps each agent's model and characteristic
     this.#save();
     this.#emit('reset');
     this.#run();
@@ -90,10 +107,39 @@ export class AgentRoom extends EventEmitter {
     this.#add({ speaker: 'human', text });
   }
 
+  /** Changes one agent's model and/or characteristic; it takes effect on that agent's next turn, which comes up next. */
+  configure(id, { model, viewpoint } = {}) {
+    const a = this.agents[id], seat = PANELISTS.find((p) => p.id === id);
+    if (!a || !seat) throw new Error('Unknown agent');
+    let cfg = { installed: [], main: null };
+    try { cfg = this.#config(); } catch {}
+    const notes = [];
+    if (model !== undefined) {
+      const next = model && model !== cfg.main ? String(model) : null; // null means the main model
+      if (next && cfg.installed.length && !cfg.installed.includes(next)) throw new Error(`${next} isn't on the model server.`);
+      if (next !== a.model) { a.model = next; notes.push(`now speaks with ${next ?? cfg.main ?? 'the main model'}`); }
+    }
+    if (viewpoint !== undefined) {
+      const v = String(viewpoint).trim().slice(0, 600);
+      const next = v && v !== seat.viewpoint ? v : null; // null means the persona's default
+      if (next !== a.viewpoint) {
+        a.viewpoint = next;
+        // Old notes were written in the old character and would pull it back, so start them again from here.
+        a.memory = ''; a.upTo = this.turns.at(-1)?.n ?? 0;
+        notes.push(next ? `has a new characteristic: ${next.length > 140 ? `${next.slice(0, 140)}…` : next}` : 'is back to the default characteristic');
+      }
+    }
+    if (!notes.length) return;
+    if (this.status === 'running') this.#override = id;
+    if (this.topic) this.#add({ speaker: 'system', text: `${seat.name} ${notes.join(' and ')}.` });
+    else this.#save();
+    this.#emit('state');
+  }
+
   #add(turn) {
     const t = { n: (this.turns.at(-1)?.n ?? 0) + 1, at: new Date().toISOString(), ...turn };
     this.turns.push(t);
-    this.draft = null;
+    if (turn.speaker !== 'system') this.draft = null; // a note must not cut off a reply that is still streaming
     this.#save();
     this.#emit('turn', { turn: t });
     return t;
@@ -109,6 +155,7 @@ export class AgentRoom extends EventEmitter {
     const ctl = this.#ctl = new AbortController();
     try {
       while (this.status === 'running' && !ctl.signal.aborted && token === this.#gen) {
+        if (this.#override) { this.cursor = ORDER.indexOf(this.#override); this.#override = null; }
         const seat = PANELISTS.find((p) => p.id === ORDER[this.cursor % ORDER.length]);
         this.speaking = seat.id; this.#emit('state');
         try {
@@ -132,13 +179,18 @@ export class AgentRoom extends EventEmitter {
     }
   }
 
+  #viewpoint(seat) { return this.agents[seat.id].viewpoint ?? seat.viewpoint; }
+
   #client(seat) {
-    const { url, models } = this.#config();
-    return makeLocalClient({ url, model: models[seat.id] });
+    const cfg = this.#config();
+    return makeLocalClient({ url: cfg.url, model: this.#modelOf(this.agents[seat.id], cfg) });
   }
 
+  /** Who a turn is from, for the transcript an agent reads. */
+  #who(t) { return t.speaker === 'human' ? 'Human' : t.speaker === 'system' ? 'Note' : PANELISTS.find((p) => p.id === t.speaker).name; }
+
   #window() {
-    const lines = this.turns.slice(-T.windowTurns).map((t) => `${t.speaker === 'human' ? 'Human' : PANELISTS.find((p) => p.id === t.speaker).name}: ${t.text}`);
+    const lines = this.turns.slice(-T.windowTurns).map((t) => `${this.#who(t)}: ${t.text}`);
     let out = lines.join('\n\n');
     if (out.length > T.windowChars) out = '…' + out.slice(-T.windowChars);
     return out;
@@ -149,9 +201,9 @@ export class AgentRoom extends EventEmitter {
     const a = this.agents[seat.id];
     const heard = this.turns.filter((t) => t.n > a.upTo);
     if (heard.length < T.notesEvery) return;
-    const body = heard.map((t) => `${t.speaker === 'human' ? 'Human' : PANELISTS.find((p) => p.id === t.speaker).name}: ${t.text}`).join('\n\n').slice(-T.windowChars);
+    const body = heard.map((t) => `${this.#who(t)}: ${t.text}`).join('\n\n').slice(-T.windowChars);
     const text = await llm.complete({
-      system: `You keep private notes for ${seat.name}, a member of a roundtable discussing "${this.topic}". ${seat.viewpoint}`,
+      system: `You keep private notes for ${seat.name}, a member of a roundtable discussing "${this.topic}". ${this.#viewpoint(seat)}`,
       prompt: `${a.memory ? `Your notes so far:\n${a.memory}\n\n` : ''}What was said since:\n${body}\n\nRewrite your notes in at most 120 words, in first person: your current stance, points you have conceded, open questions you want answered, and arguments already made that you must not repeat.`,
       maxTokens: T.notesMaxTokens, signal,
     });
@@ -167,7 +219,7 @@ export class AgentRoom extends EventEmitter {
     const role = seat.id === 'synthesizer'
       ? `You moderate: name the real disagreement in a sentence, then push the group to a sharper question or a decision.${this.stale ? ' The discussion has started repeating itself, so open a genuinely new angle or sub-question.' : ''}`
       : 'Move the argument forward with a point nobody has made yet.';
-    const system = `You are ${seat.name} in a never-ending roundtable with ${others} on the topic: "${this.topic}". ${seat.viewpoint}
+    const system = `You are ${seat.name} in a never-ending roundtable with ${others} on the topic: "${this.topic}". ${this.#viewpoint(seat)}
 Speak in first person as ${seat.name}, in ${T.replyWords[0]} to ${T.replyWords[1]} words of plain prose: no headings, no bullet lists, no name prefix. Respond to something specific another member or the human just said. ${role} Never repeat what has been said. Disagree when you really do, and concede when convinced.${humanSpoke ? ' The human has spoken: answer them directly before anything else.' : ''}`;
     const a = this.agents[seat.id];
     const prompt = `${a.memory ? `Your private notes:\n${a.memory}\n\n` : ''}${this.turns.length ? `Recent discussion:\n${this.#window()}` : `The topic is: ${this.topic}\nYou open the discussion.`}\n\nIt is your turn, ${seat.name}.`;
@@ -176,8 +228,8 @@ Speak in first person as ${seat.name}, in ${T.replyWords[0]} to ${T.replyWords[1
     const say = async (sys) => {
       this.draft = { speaker: seat.id, text: '', model: llm.model };
       const out = await llm.stream({ system: sys, prompt, maxTokens: T.replyMaxTokens, signal, onDelta: (partial) => {
-        this.draft.text = cleanReply(partial, seat.name);
-        this.#emit('delta', { speaker: seat.id, text: this.draft.text, model: llm.model });
+        if (this.draft) this.draft.text = cleanReply(partial, seat.name);
+        this.#emit('delta', { speaker: seat.id, text: cleanReply(partial, seat.name), model: llm.model });
       } });
       return cleanReply(out, seat.name);
     };

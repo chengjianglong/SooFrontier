@@ -145,6 +145,7 @@ const ROUTES = {
   'POST /api/live/pause': (req, res) => { store.live.pause(); sendJSON(res, 200, {}); },
   'POST /api/live/resume': (req, res) => { store.live.resume(); sendJSON(res, 200, {}); },
   'POST /api/live/stop': (req, res) => { store.live.stop(); sendJSON(res, 200, {}); },
+  'POST /api/live/agent': (req, res, body) => { store.live.configure(body.id, { model: body.model, viewpoint: body.viewpoint }); sendJSON(res, 200, {}); },
   'POST /api/live/say': (req, res, body) => { store.live.say(body.text); sendJSON(res, 200, {}); },
 
   // One JSON object per line: {delta} as text arrives, then {done: {text, by}} or {error}.
