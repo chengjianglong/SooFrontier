@@ -1,5 +1,5 @@
 // The Brainstorm room: you and the agent panel, by text or by voice. Ported from Brainstorm/BrainstormRoom.swift and BrainstormVoice.swift.
-import { PANELISTS, speakable } from './shared.js';
+import { PANELISTS, speakable, castVoices } from './shared.js';
 import { api, store } from './ui.js';
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -23,7 +23,7 @@ class Voice {
   #started = 0;
   #sawBoundary = false;
   #mouth = { open: 0, wide: 0, round: 0, energy: 0 };
-  #voices = {};
+  #cast = null;
 
   static get recognitionClass() { return window.SpeechRecognition ?? window.webkitSpeechRecognition; }
   get isSpeaking() { return this.#pending > 0; }
@@ -69,23 +69,25 @@ class Voice {
     r?.abort();
   }
 
+  /** The voice, pitch and rate that fit this panelist's portrait (gender from the voice, age from pitch and pace). */
   #voiceFor(panelist) {
-    if (this.#voices[panelist]) return this.#voices[panelist];
-    const english = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en')).sort((a, b) => b.localService - a.localService);
-    const seen = new Set();
-    const distinct = english.filter((v) => !seen.has(v.name) && seen.add(v.name));
-    const index = Math.max(0, PANELISTS.findIndex((p) => p.id === panelist));
-    const v = distinct.length ? distinct[index % distinct.length] : null;
-    if (v) this.#voices[panelist] = v;
-    return v;
+    if (!this.#cast) {
+      const voices = speechSynthesis.getVoices();
+      if (!voices.length) return null;
+      this.#cast = castVoices(voices);
+      // Some browsers load voices late or add more later: re-cast when the list changes.
+      speechSynthesis.addEventListener?.('voiceschanged', () => { this.#cast = null; }, { once: true });
+    }
+    return this.#cast[panelist] ?? null;
   }
 
   speak(text, panelist) {
     if (!('speechSynthesis' in window)) { queueMicrotask(() => this.onFinishedSpeaking()); return; }
     const u = new SpeechSynthesisUtterance(text);
-    const voice = this.#voiceFor(panelist);
-    if (voice) u.voice = voice;
-    u.rate = 1.05;
+    const cast = this.#voiceFor(panelist);
+    if (cast?.voice) u.voice = cast.voice;
+    u.pitch = cast?.pitch ?? 1;
+    u.rate = cast?.rate ?? 1.05;
     this.#pending++;
     const run = this.#run;
     const words = text.split(/\s+/).filter(Boolean);

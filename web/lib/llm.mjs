@@ -35,6 +35,17 @@ function launch(exe, args, { env, cwd, signal, timeout = 300_000 }) {
   });
 }
 
+/** AbortSignal.any (Node 20+), with a fallback so the server also runs on older Node such as Ubuntu's Node 18. */
+function anySignal(signals) {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals);
+  const controller = new AbortController();
+  for (const s of signals) {
+    if (s.aborted) { controller.abort(s.reason); break; }
+    s.addEventListener('abort', () => controller.abort(s.reason), { once: true });
+  }
+  return controller.signal;
+}
+
 const tail = (s) => s.trim().slice(-300) || 'no output';
 
 const grokAuthPath = join(home, '.grok', 'auth.json');
@@ -123,7 +134,7 @@ async function runCLI(provider, { model, system, prompt, research, signal }) {
 async function post(provider, url, headers, body, signal) {
   const timeout = AbortSignal.timeout(180_000);
   const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body),
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+    signal: signal ? anySignal([signal, timeout]) : timeout });
   const json = await r.json().catch(() => ({}));
   if (r.status !== 200) {
     const msg = json.error?.message ?? (typeof json.error === 'string' ? json.error : `HTTP ${r.status}`);
@@ -181,15 +192,18 @@ export function makeLocalClient({ url, model, fastModel = model }) {
     provider: 'local', mode: 'local', model, label: `${model} · local`,
     /** The same server with its fast model, for quick jobs. */
     withModel() { return makeLocalClient({ url, model: fastModel || model, fastModel }); },
-    async complete({ system, prompt, maxTokens = 8000, signal }) {
+    async complete({ system, prompt, maxTokens = 8000, temperature, signal }, thinking = maxTokens > 4000) {
       const timeout = AbortSignal.timeout(600_000);
       const body = { model, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };
-      // gpt-oss reasons before it answers; keep that short so the token budget goes to the answer.
+      if (temperature !== undefined) body.temperature = temperature;
+      // Thinking spends the same token budget as the answer. gpt-oss always reasons, so keep that short;
+      // thinking models such as Qwen3 skip it on short jobs.
       if (model.startsWith('gpt-oss')) body.reasoning_effort = maxTokens <= 3000 ? 'low' : 'medium';
+      else if (!thinking) body.reasoning_effort = 'none';
       let r;
       try {
         r = await fetch(`${trimURL(url)}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-          signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+          signal: signal ? anySignal([signal, timeout]) : timeout });
       } catch (e) {
         if (signal?.aborted) throw new Error('Cancelled');
         throw new Error(`Can't reach the local model server at ${url} (${e.cause?.code ?? e.message}).`);
@@ -198,6 +212,8 @@ export function makeLocalClient({ url, model, fastModel = model }) {
       if (r.status !== 200) throw new Error(`Local model (${model}): ${json.error?.message ?? json.error ?? `HTTP ${r.status}`}`);
       const choice = json.choices?.[0];
       const text = (choice?.message?.content ?? '').trim();
+      // Ran out of budget while thinking: answer again without thinking.
+      if (!text && choice?.finish_reason === 'length' && thinking && !model.startsWith('gpt-oss')) return this.complete({ system, prompt, maxTokens, temperature, signal }, false);
       if (!text) throw new Error(`Local model (${model}) returned no text (${choice?.finish_reason ?? 'empty'}).`);
       return text;
     },

@@ -64,7 +64,7 @@ struct BrainstormView: View {
                             AgentBadge(kind: p.agent, status: busy ? .working("") : .idle, size: 24)
                             VStack(alignment: .leading, spacing: 0) {
                                 Text(p.name).font(.caption.weight(.semibold))
-                                Text(store.client(p.provider) != nil ? p.provider.family : "Fallback").font(.caption2).foregroundStyle(.secondary)
+                                Text(store.local.isConfigured ? LocalModels.shortName(store.local.model) : "Not set up").font(.caption2).foregroundStyle(.secondary)
                             }
                         }
                         .padding(.leading, 4).padding(.trailing, 10).padding(.vertical, 4)

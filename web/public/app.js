@@ -1,5 +1,5 @@
 // The app shell and its tabs: Brief, Research, Productions, Opinions, Brainstorm, Settings.
-import { AGENTS, CATEGORIES, LOCAL_PROVIDER, PANELISTS, PROVIDERS, SECTIONS, providerInfo, VOICE_ROLES, agentColor, capitalize, futureWork, hypeWatch, itemsIn, laneOpportunities, parseStructure, quickTLDR, quickTakeaways, sentences, spokenScript, technicalDetails, topSignals, verdict, keyPoints, byScore } from './shared.js';
+import { AGENTS, CATEGORIES, COUNCIL_MAX_ROUNDS, COUNCIL_SEATS, shortModel, LOCAL_PROVIDER, PANELISTS, PROVIDERS, SECTIONS, providerInfo, VOICE_ROLES, agentColor, capitalize, futureWork, hypeWatch, itemsIn, laneOpportunities, parseStructure, quickTLDR, quickTakeaways, sentences, spokenScript, technicalDetails, topSignals, verdict, keyPoints, byScore } from './shared.js';
 import { Reader, SPEEDS } from './reader.js';
 import { Room } from './room.js';
 import { api, h, icon, inline, markdown, request, store, timeAgo } from './ui.js';
@@ -31,7 +31,6 @@ const itemHref = (item) => `#/item/${encodeURIComponent(item.url)}`;
 const isSaved = (item) => S.saved.includes(item.url);
 const isOnPlan = (p) => (p === 'local' ? S.local : S.providers[p]).configured;
 const LOCAL_MODELS = ['gpt-oss:120b', 'qwen3.8:27b', 'qwen3.6:35b-a3b', 'qwen3-next:80b', 'gemma4:31b', 'gpt-oss:20b'];
-const councilSeats = () => [...Object.keys(PROVIDERS), 'local'].filter(isOnPlan);
 
 // MARK: Appearance
 
@@ -272,7 +271,7 @@ function viewSaved() {
 // MARK: One story
 
 function storyState(id) {
-  if (!detail.has(id)) detail.set(id, { critique: null, by: null, critiquing: false, council: [], ruling: null, convening: false, error: null, paper: null, paperLoaded: false, quick: null, ideasLoading: false });
+  if (!detail.has(id)) detail.set(id, { council: [], ruling: null, rulingBy: null, outcome: null, speaking: null, convening: false, error: null, paper: null, paperLoaded: false, quick: null, ideasLoading: false });
   return detail.get(id);
 }
 
@@ -337,7 +336,6 @@ function viewStory(id) {
   const st = storyState(id);
   loadStory(item, next);
 
-  const analysis = st.critique ? parseStructure(st.critique) : null;
   const quick = storyParts(item, st);
   const reading = reader.isActive && reader.currentItemID === id;
 
@@ -348,16 +346,8 @@ function viewStory(id) {
     location.hash = itemHref(target);
   };
 
-  const runCritique = async () => {
-    st.critiquing = true; st.error = null; render();
-    try { const r = await api('/api/item/analyze', { id }); st.critique = r.text; st.by = r.by; }
-    catch (e) { st.error = e.message; }
-    st.critiquing = false;
-    if (stillOn(item)) render();
-  };
-
   const runCouncil = async () => {
-    st.convening = true; st.error = null; st.council = []; st.ruling = null; render();
+    st.convening = true; st.error = null; st.council = []; st.ruling = null; st.rulingBy = null; st.outcome = null; st.speaking = null; render();
     try {
       const r = await request('/api/item/council', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'The council could not meet.');
@@ -369,24 +359,25 @@ function viewStory(id) {
         buffer = lines.pop();
         for (const line of lines) {
           const e = JSON.parse(line);
-          if (e.turn) st.council.push(e.turn);
-          if (e.ruling) st.ruling = e.ruling;
+          if (e.speaking) st.speaking = e.speaking;
+          if (e.turn) { st.council.push(e.turn); st.speaking = null; }
+          if (e.outcome) st.outcome = e.outcome;
+          if (e.ruling) { st.ruling = e.ruling; st.rulingBy = e.by; }
           if (e.error) st.error = e.error;
           if (stillOn(item)) render();
         }
       }
     } catch (e) { st.error = e.message; }
-    st.convening = false;
+    st.convening = false; st.speaking = null;
     if (stillOn(item)) render();
   };
 
   const listen = () => {
-    const here = spokenScript(analysis ?? quick);
+    const here = spokenScript(quick);
     reader.play(index < 0 ? [item] : list.map(fresh), Math.max(0, index), (it) => (it.url === id ? here : scriptFor(it)));
   };
 
   const action = (title, iconName, onclick, disabled = false) => h('button', { class: 'action', onclick, disabled }, icon(iconName, 20), h('span', {}, title));
-  const seats = councilSeats();
 
   return h('div', { class: 'page reading' },
     h('div', { class: 'story-bar' },
@@ -401,25 +392,16 @@ function viewStory(id) {
       item.tags.length ? h('p', { class: 'caption muted' }, item.tags.join('  ·  ')) : null),
     h('hr'),
     h('div', { class: 'actions' },
-      action(st.critiquing ? 'Analyzing…' : st.critique ? 'Re-analyze' : 'Analyze', 'glasses', runCritique, st.critiquing),
       action(st.convening ? 'In session…' : 'Council', 'people', runCouncil, st.convening),
       reader.supported ? action(reading ? 'Stop' : 'Listen', reading ? 'stop' : 'speaker', () => (reading ? reader.stop() : listen())) : null),
     st.error ? h('p', { class: 'red callout', role: 'alert' }, st.error) : null,
-    st.critiquing ? spinner('Writing a detailed analysis…') : null,
-    analysis && st.by ? eyebrow(`Analysis by ${st.by}`) : !st.critique ? eyebrow('Quick read · tap Analyze for the full analysis with math') : null,
-    st.critique && !analysis ? h('div', { class: 'serif' }, markdown(st.critique)) : structured({
-      ...(analysis ?? quick),
-      opportunitiesLoading: !analysis && st.ideasLoading && !quick.opportunities.length,
+    eyebrow('Quick read'),
+    structured({
+      ...quick,
+      opportunitiesLoading: st.ideasLoading && !quick.opportunities.length,
       header: [item.assessment ? signalMeter(item.assessment) : null, keyFiguresView(st.paper?.figures ?? [])],
     }),
-    st.convening || st.council.length ? h('section', { class: 'council' }, sectionRule('The Frontier Council'),
-      seats.map((p) => {
-        const t = st.council.find((x) => x.provider === p);
-        return h('div', { class: 'seat' }, h('div', { class: 'seat-name' }, eyebrow(providerInfo(p).seat.title, 'strong'), eyebrow(`· ${providerInfo(p).family}`)),
-          t ? (t.failed ? h('p', { class: 'red callout' }, t.text) : h('div', { class: 'serif' }, markdown(t.text))) : spinner('Deliberating…'));
-      }),
-      st.ruling ? h('div', { class: 'ruling' }, eyebrow('The ruling', 'accent'), structuredText(st.ruling))
-        : st.convening && st.council.length === seats.length ? spinner('The moderator is ruling…') : null) : null,
+    st.convening || st.council.length ? councilView(st) : null,
     index >= 0 && list.length > 1 ? h('div', { class: 'pager' },
       h('button', { class: 'btn', disabled: !previous, onclick: () => move(previous) }, icon('left', 15), 'Previous'),
       h('span', { class: 'caption mono muted' }, `${index + 1} of ${list.length}`),
@@ -468,7 +450,7 @@ function panelStrip() {
     const busy = room.phase.name === p.name;
     return h('button', { class: `panel-chip${on ? ' on' : ''}`, style: { '--agent': agentColor(p.agent) }, 'aria-pressed': String(on), 'aria-label': `${p.name}, ${on ? 'on the panel' : 'off the panel'}`, onclick: () => room.toggleMember(p.id) },
       h('span', { class: `badge small${busy ? ' pulse' : ''}` }, p.name[0]),
-      h('span', { class: 'chip-text' }, h('strong', {}, p.name), h('span', {}, isOnPlan(p.provider) ? PROVIDERS[p.provider].family : 'Fallback')));
+      h('span', { class: 'chip-text' }, h('strong', {}, p.name), h('span', {}, S.local.configured ? shortModel(S.local.model) : 'Not set up')));
   }));
 }
 
@@ -594,13 +576,40 @@ function buildStage() {
   return { holder, frame };
 }
 
+// MARK: Council
+
+const seatTitle = (id) => COUNCIL_SEATS.find((s) => s.id === id)?.title ?? id;
+const verdictChip = (v) => v ? h('span', { class: `verdict-chip v-${v}` }, capitalize(v)) : null;
+
+function councilView(st) {
+  const rounds = [...new Set(st.council.map((t) => t.round)), ...(st.speaking && !st.council.some((t) => t.round === st.speaking.round) ? [st.speaking.round] : [])];
+  const o = st.outcome;
+  return h('section', { class: 'council' }, sectionRule('The Frontier Council'),
+    h('p', { class: 'caption muted' }, `${COUNCIL_SEATS.length} members debate on your local models until they agree, up to ${COUNCIL_MAX_ROUNDS} rounds.`),
+    rounds.map((r) => h('div', { class: 'council-round' },
+      eyebrow(r === 1 ? 'Round 1 · Opening statements' : `Round ${r} · Rebuttals`, 'accent'),
+      st.council.filter((t) => t.round === r).map((t) => {
+        const prev = st.council.find((x) => x.seat === t.seat && x.round === r - 1);
+        const changed = prev?.verdict && t.verdict && prev.verdict !== t.verdict;
+        return h('div', { class: 'seat' },
+          h('div', { class: 'seat-name' }, eyebrow(seatTitle(t.seat), 'strong'), t.model ? eyebrow(`· ${shortModel(t.model)}`) : null, verdictChip(t.verdict), changed ? h('span', { class: 'caption muted' }, `changed from ${prev.verdict}`) : t.kept ? h('span', { class: 'caption muted' }, 'holds') : null),
+          t.failed ? h('p', { class: 'red callout' }, t.text) : h('div', { class: 'serif' }, markdown(t.text)));
+      }),
+      st.speaking?.round === r ? spinner(`${seatTitle(st.speaking.seat)} is speaking…`) : null)),
+    o ? h('div', { class: `consensus${o.agreed ? ' agreed' : ''}` }, o.agreed
+      ? [h('strong', {}, `Agreed after ${o.rounds} rounds: `), verdictChip(o.leading)]
+      : [h('strong', {}, `No full agreement after ${o.rounds} rounds: `), h('span', {}, Object.entries(o.counts).map(([v, n]) => `${n} ${v}`).join(' · '))]) : null,
+    st.ruling ? h('div', { class: 'ruling' }, eyebrow(st.rulingBy ? `The ruling · ${st.rulingBy}` : 'The ruling', 'accent'), structuredText(st.ruling))
+      : st.convening && o ? spinner('The moderator is ruling…') : null);
+}
+
 // MARK: Settings
 
 function viewSettings() {
   const section = (title, ...children) => h('section', { class: 'settings-section' }, h('h2', { class: 'eyebrow strong' }, title), ...children);
   const segmented = (label, options, value, onchange) => h('div', { class: 'setting-row' }, h('span', {}, label), h('div', { class: 'segmented', role: 'group', 'aria-label': label },
     options.map(([id, text]) => h('button', { class: value === id ? 'on' : '', 'aria-pressed': String(value === id), onclick: () => onchange(id) }, text))));
-  const select = (label, options, value, onchange) => h('label', { class: 'setting-row' }, h('span', {}, label), h('select', { class: 'field auto', onchange: (e) => onchange(e.target.value) },
+  const select = (label, options, value, onchange, note = null) => h('label', { class: 'setting-row' }, h('span', {}, label, note ? h('span', { class: 'caption red block' }, note) : null), h('select', { class: 'field auto', onchange: (e) => onchange(e.target.value) },
     options.map(([id, text]) => h('option', { value: id, selected: id === value }, text))));
   const setLook = (k, v) => { look[k] = v; store.set('appearance', look); applyAppearance(); render(); };
 
@@ -648,8 +657,15 @@ function viewSettings() {
       !L.url ? 'Not set' : !L.reachable ? 'Not reachable' : L.configured ? `Connected · ${L.installed.length} models` : `Connected, but ${L.model} isn't downloaded`)),
     select('Main model', localModelOptions(L.model), L.model, (model) => setLocal({ model })),
     select('Fast model', localModelOptions(L.fastModel), L.fastModel, (fastModel) => setLocal({ fastModel })),
+    h('p', { class: 'caption muted' }, 'Frontier Council seats: give a member its own model for a more distinct voice.'),
+    COUNCIL_SEATS.map((seat) => {
+      const own = L.councilModels?.[seat.id] ?? '';
+      const missing = own && L.reachable && !L.installed.includes(own);
+      return select(seat.title.replace(/^The /, ''), [['', `Main model (${shortModel(L.model)})`], ...localModelOptions(own || L.model)], own,
+        (m) => setLocal({ councilModels: { [seat.id]: m } }), missing ? 'Not downloaded, so the main model stands in' : null);
+    }),
     h('label', { class: 'setting-row' }, h('span', {}, 'Prefer local models'), h('input', { type: 'checkbox', class: 'switch', 'aria-label': 'Prefer local models', checked: L.prefer, onchange: (e) => setLocal({ prefer: e.target.checked }) })),
-    h('p', { class: 'caption muted' }, 'An Ollama server on your own GPU machine, such as a DGX Spark / GB10, on this network or over a VPN. The main model writes briefs, analyses and rulings, the fast model writes quick reads, and it takes the Open-Weights Advocate seat on the Council. It steps in whenever Claude, GPT or Grok can’t be reached, or answers first when “Prefer local models” is on. Live X and web research always uses Grok.'),
+    h('p', { class: 'caption muted' }, 'An Ollama server on your own GPU machine, such as a DGX Spark / GB10, on this network or over a VPN. The main model writes briefs and digests, the fast model writes quick reads, and the Frontier Council and Brainstorm always run on it, at no plan or API cost. It steps in whenever Claude, GPT or Grok can’t be reached, or answers first when “Prefer local models” is on. Live X and web research always uses Grok.'),
     h('div', { class: 'setting-row start' }, h('button', { class: 'btn small', disabled: !L.configured, onclick: async (e) => {
       e.target.disabled = true; localResult.textContent = 'Testing… (the first answer loads the model, which can take a minute)';
       try { const r = await api('/api/provider/test', { provider: 'local' }); localResult.textContent = `✓ ${r.text.slice(0, 40)}`; }
@@ -660,7 +676,7 @@ function viewSettings() {
   const familyOptions = Object.keys(PROVIDERS).map((p) => [p, PROVIDERS[p].family]);
   const roles = section('Roles',
     select('Synthesizer & moderator', familyOptions, S.synthesizerProvider, (v) => api('/api/settings', { synthesizerProvider: v })),
-    select('Story analysis (Analyze)', familyOptions, S.skepticProvider, (v) => api('/api/settings', { skepticProvider: v })));
+    select('Quick reads', familyOptions, S.skepticProvider, (v) => api('/api/settings', { skepticProvider: v })));
 
   const agents = section('Agents',
     h('p', { class: 'caption muted' }, 'The harvesters fan out in parallel. The Skeptic cross-examines everything they bring back, and the Synthesizer turns the best of it into your brief.'),

@@ -62,15 +62,6 @@ enum Provider: String, CaseIterable, Codable, Identifiable, Sendable {
         case .xai: "xmark"
         }
     }
-
-    /// The persona each provider plays on the Frontier Council.
-    var councilSeat: (title: String, brief: String) {
-        switch self {
-        case .anthropic: ("The Skeptic", "Rigorous methodologist. Hunt for missing baselines, eval leakage, cherry-picked results, and unstated limitations.")
-        case .openai: ("The Builder", "Pragmatic engineer. Judge what this enables today, what it costs to run, and how you'd actually ship with it.")
-        case .xai: ("The Contrarian", "Provocative outsider. Challenge the consensus narrative, name who benefits from the hype, and say what everyone is missing.")
-        }
-    }
 }
 
 struct LLMError: LocalizedError {

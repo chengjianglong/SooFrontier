@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { AGENTS, CATEGORIES, PANELISTS, PROVIDERS, SECTIONS, providerInfo, VOICE_STARTERS, assess, futureWork, itemsIn, keyPoints, parseQuickRead, quickTLDR, topSignals } from '../public/shared.js';
+import { AGENTS, CATEGORIES, COUNCIL_DEFAULT_MODELS, COUNCIL_MAX_ROUNDS, COUNCIL_SEATS, PANELISTS, PROVIDERS, SECTIONS, parseVerdict, providerInfo, tallyVerdicts, VOICE_STARTERS, assess, futureWork, itemsIn, keyPoints, parseQuickRead, quickTLDR, topSignals } from '../public/shared.js';
 import { HARVESTERS } from './harvest.mjs';
 import { LOCAL, cliPath, localModels, makeClient, makeLocalClient, withFallback } from './llm.mjs';
 import { arxivID, keyFigures, readPaper } from './net.mjs';
@@ -83,7 +83,8 @@ export class FrontierStore extends EventEmitter {
       keys: s.keys ?? {}, models: s.models ?? {}, modes: s.modes ?? {}, cliModels: s.cliModels ?? {},
       synthesizerProvider: s.synthesizerProvider ?? 'anthropic', skepticProvider: s.skepticProvider ?? 'openai',
       agentsOff: s.agentsOff ?? [], saved: s.saved ?? [], voices: s.voices ?? VOICE_STARTERS,
-      local: { url: LOCAL.defaultURL, model: LOCAL.defaultModel, fastModel: LOCAL.defaultFastModel, prefer: false, ...s.local },
+      local: { url: LOCAL.defaultURL, model: LOCAL.defaultModel, fastModel: LOCAL.defaultFastModel, prefer: false, ...s.local,
+        councilModels: { ...COUNCIL_DEFAULT_MODELS, ...s.local?.councilModels } },
     };
     const c = loadJSON('cache.json', {});
     this.items = c.items ?? [];
@@ -115,6 +116,14 @@ export class FrontierStore extends EventEmitter {
     const fastModel = this.localInstalled.includes(l.fastModel) ? l.fastModel : l.model;
     const c = makeLocalClient({ url: l.url, model: l.model, fastModel });
     return fast ? c.withModel() : c;
+  }
+
+  /** The local client for a council seat: its own model when that's downloaded, otherwise the main model. */
+  seatClient(seatId) {
+    const main = this.localClient();
+    const own = this.settings.local.councilModels?.[seatId];
+    if (!main || !own || own === main.model || !this.localInstalled?.includes(own)) return main;
+    return makeLocalClient({ url: this.settings.local.url, model: own });
   }
 
   async refreshLocal() {
@@ -185,6 +194,13 @@ export class FrontierStore extends EventEmitter {
       if (typeof l.url === 'string') { s.local.url = l.url.trim().replace(/\/+$/, ''); localChanged = true; }
       for (const k of ['model', 'fastModel']) if (typeof l[k] === 'string' && l[k].trim()) s.local[k] = l[k].trim();
       if (typeof l.prefer === 'boolean') s.local.prefer = l.prefer;
+      if (l.councilModels && typeof l.councilModels === 'object') {
+        for (const seat of COUNCIL_SEATS) {
+          const m = l.councilModels[seat.id];
+          if (m === '') delete s.local.councilModels[seat.id];
+          else if (typeof m === 'string' && m.trim()) s.local.councilModels[seat.id] = m.trim();
+        }
+      }
     }
     if (localChanged) this.refreshLocal();
     if (PROVIDER_IDS.includes(patch.synthesizerProvider)) s.synthesizerProvider = patch.synthesizerProvider;
@@ -372,50 +388,65 @@ export class FrontierStore extends EventEmitter {
     } catch { return null; }
   }
 
-  /** Full analysis, written from the paper's full text and figure captions when the page can be read. */
-  async critique(item, signal) {
-    const llm = this.roleClient(this.settings.skepticProvider);
-    if (!llm) throw new Error('Add a model provider key in Settings.');
-    const paper = await this.paper(item);
-    let prompt = P.itemPrompt(item);
-    if (paper) {
-      const figures = paper.figures.slice(0, 12).map((f) => `- ${f.caption}`).join('\n');
-      if (figures) prompt += `\n\nFigures (captions):\n${figures}`;
-      prompt += `\n\nFull text:\n${paper.text}`;
-    }
-    return { text: await llm.complete({ system: P.CRITIQUE_SYSTEM, prompt, signal }), by: llm.label };
-  }
-
-  /** Convenes every configured provider in parallel, then has the moderator rule. */
+  /**
+   * The Frontier Council, on the local models only (no plan or API cost). The members give opening statements,
+   * then debate in rebuttal rounds, each speaking in turn and answering the others, until they all hold the same
+   * verdict (after at least one rebuttal) or COUNCIL_MAX_ROUNDS is reached. The moderator then rules.
+   * Events: {round}, {speaking}, {turn}, {outcome}, {ruling}.
+   */
   async convene(item, onEvent, signal) {
-    const panel = [...this.configuredProviders().map((p) => this.client(p)), this.localClient()].filter(Boolean);
-    if (!panel.length) throw new Error('Add at least one provider key in Settings.');
-    const prompt = P.itemPrompt(item);
-    const turns = await Promise.all(panel.map(async (llm) => {
-      let turn;
-      try {
-        turn = { provider: llm.provider, text: await llm.complete({ system: P.seatSystem(llm.provider), prompt, maxTokens: 4000, signal }) };
-      } catch (e) {
-        turn = { provider: llm.provider, text: e.message, failed: true };
+    const llm = this.localClient();
+    if (!llm) throw new Error('The Council runs on your local models. Set up Local models in Settings (and download the main model).');
+    const turns = [];
+    let outcome = null;
+    for (let round = 1; round <= COUNCIL_MAX_ROUNDS; round++) {
+      onEvent({ round });
+      const before = [...turns];
+      const thisRound = [];
+      for (const seat of COUNCIL_SEATS) {
+        if (signal?.aborted) throw new Error('Cancelled');
+        onEvent({ speaking: { seat: seat.id, round } });
+        // Opening statements are independent; in rebuttals each member hears everything said so far, this round included.
+        const heard = round === 1 ? before : turns;
+        const voice = this.seatClient(seat.id);
+        let turn;
+        try {
+          const raw = await voice.complete({ system: P.councilSeatSystem(seat, round), prompt: P.councilTurnPrompt(item, heard), maxTokens: 1500, temperature: 0.8, signal });
+          turn = { seat: seat.id, round, model: voice.model, ...parseVerdict(raw) };
+          // No verdict line means no change of mind: keep the member's last verdict.
+          if (!turn.verdict) {
+            const last = turns.findLast((t) => t.seat === seat.id && t.verdict);
+            if (last) Object.assign(turn, { verdict: last.verdict, kept: true });
+          }
+        } catch (e) {
+          if (signal?.aborted) throw e;
+          turn = { seat: seat.id, round, model: voice.model, text: e.message, verdict: null, failed: true };
+        }
+        turns.push(turn);
+        thisRound.push(turn);
+        onEvent({ turn });
       }
-      onEvent({ turn });
-      return turn;
-    }));
-    const good = turns.filter((t) => !t.failed);
-    const moderator = this.roleClient(this.settings.synthesizerProvider);
-    if (!moderator || !good.length) return;
-    const transcript = good.map((t) => `### ${providerInfo(t.provider).seat.title} (${providerInfo(t.provider).family})\n${t.text}`).join('\n\n');
-    onEvent({ ruling: await moderator.complete({ system: P.MODERATOR_SYSTEM, prompt: `${prompt}\n\nPanel:\n\n${transcript}`, maxTokens: 4000, signal }) });
+      const spoke = thisRound.filter((t) => !t.failed);
+      if (!spoke.length) throw new Error(`No council member could answer: ${thisRound[0]?.text ?? 'unknown error'}`);
+      outcome = { ...tallyVerdicts(spoke), rounds: round };
+      if (outcome.agreed && round >= 2) break;
+    }
+    onEvent({ outcome });
+    const ruling = await llm.complete({ system: P.MODERATOR_SYSTEM, prompt: P.moderatorPrompt(item, turns, outcome), maxTokens: 4000, signal });
+    onEvent({ ruling, by: llm.label });
   }
 
   // MARK: Brainstorm
 
-  /** One panelist's turn. The browser owns the room and asks for one reply at a time. */
+  /**
+   * One panelist's turn, always on the local main model (no plan or API cost, and no fallback to a provider).
+   * The browser owns the room and asks for one reply at a time.
+   */
   async panelTurn({ panelistId, members, messages, optional, summary, useFrontier }, signal) {
     const panelist = PANELISTS.find((p) => p.id === panelistId);
     if (!panelist) throw new Error('Unknown panelist');
-    const llm = this.roleClient(panelist.provider);
-    if (!llm) throw new Error('Connect a model or a local model server in Settings to brainstorm.');
+    const llm = this.localClient();
+    if (!llm) throw new Error('Brainstorm runs on your local models. Set up Local models in Settings (and download the main model).');
     const text = await llm.complete({
       system: P.panelSystem(panelist, members, { summary, frontier: useFrontier ? topSignals(this.items) : null }),
       prompt: P.panelPrompt(panelist, messages, { optional, summary }),

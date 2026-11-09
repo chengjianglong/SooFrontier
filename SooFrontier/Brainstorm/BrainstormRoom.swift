@@ -10,23 +10,32 @@ struct Panelist: Identifiable, Hashable, Sendable {
     let viewpoint: String
     /// Other words that address this panelist ("Claude", "GPT", …).
     let aliases: [String]
+    /// A voice that fits the portrait: gender picks the voice, pitch and pace suggest age (voices carry no age).
+    let voice: VoiceProfile
+
+    struct VoiceProfile: Hashable, Sendable {
+        enum Gender: Hashable, Sendable { case female, male }
+        var gender: Gender
+        var pitch: Float
+        var rate: Float
+    }
 
     static let all: [Panelist] = [
         Panelist(id: "skeptic", name: "Skeptic", agent: .skeptic, provider: .anthropic,
                  viewpoint: "A rigorous methodologist. You test claims: missing baselines, weak evidence, hidden assumptions, and what would change your mind.",
-                 aliases: ["claude"]),
+                 aliases: ["claude"], voice: .init(gender: .female, pitch: 0.97, rate: 1.0)),
         Panelist(id: "builder", name: "Builder", agent: .analyst, provider: .openai,
                  viewpoint: "A pragmatic engineer and product builder. You focus on what this enables today, how you would ship it, what it costs, and concrete next steps.",
-                 aliases: ["gpt", "chatgpt", "analyst"]),
+                 aliases: ["gpt", "chatgpt", "analyst"], voice: .init(gender: .male, pitch: 1.03, rate: 1.08)),
         Panelist(id: "contrarian", name: "Contrarian", agent: .pundit, provider: .xai,
                  viewpoint: "A provocative outsider. You challenge the consensus, name who benefits from the hype, and argue the unpopular side when it has merit.",
-                 aliases: ["grok", "pundit"]),
+                 aliases: ["grok", "pundit"], voice: .init(gender: .male, pitch: 0.82, rate: 0.95)),
         Panelist(id: "archivist", name: "Archivist", agent: .archivist, provider: .anthropic,
                  viewpoint: "A research historian. You connect the topic to prior papers, earlier waves of similar ideas, and what the literature already settled.",
-                 aliases: ["researcher"]),
+                 aliases: ["researcher"], voice: .init(gender: .female, pitch: 0.88, rate: 0.9)),
         Panelist(id: "synthesizer", name: "Synthesizer", agent: .synthesizer, provider: .anthropic,
                  viewpoint: "The moderator. You find common ground, sharpen the real disagreement, and steer the group toward a useful conclusion.",
-                 aliases: ["moderator"]),
+                 aliases: ["moderator"], voice: .init(gender: .female, pitch: 1.08, rate: 1.05)),
     ]
 }
 
@@ -245,11 +254,12 @@ final class BrainstormRoom {
         guard let store else { return nil }
         let p = pick.panelist
         phase = .thinking(p.name)
-        let llm = store.client(p.provider) ?? store.roleClient(p.provider)
-        guard let llm else {
-            error = "Connect a model in Settings, or set up a local model server, to brainstorm."
+        // Brainstorm always runs on the local main model: no plan or API cost, and no fallback to a provider.
+        guard store.local.isConfigured else {
+            error = "Brainstorm runs on your local models. Set up Local models in Settings."
             return nil
         }
+        let llm = LLMClient.local()
         do {
             let (text, by) = try await llm.completeLabeled(system: system(for: p, summary: pick.summary),
                                                            prompt: prompt(for: p, optional: pick.optional, summary: pick.summary),

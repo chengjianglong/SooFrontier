@@ -119,7 +119,6 @@ const ROUTES = {
 
   'POST /api/item/paper': async (req, res, body) => sendJSON(res, 200, await store.paperSummary(needItem(body.id))),
   'POST /api/item/quick': async (req, res, body) => sendJSON(res, 200, { quick: await store.quickRead(needItem(body.id)) }),
-  'POST /api/item/analyze': async (req, res, body) => sendJSON(res, 200, await store.critique(needItem(body.id), abortOnClose(res))),
 
   // One JSON object per line: each panelist as they finish, then the ruling.
   'POST /api/item/council': async (req, res, body) => {

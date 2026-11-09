@@ -351,43 +351,63 @@ final class FrontierStore {
         return read
     }
 
-    /// Full analysis, written from the paper's full text and figure captions when the page can be read.
-    func critique(_ item: FrontierItem, content: PaperContent?) async throws -> (String, String) {
-        guard let llm = roleClient(skepticProvider) else { throw LLMError(message: "Add a model provider key in Settings.") }
-        var prompt = SkepticAgent.prompt(for: item)
-        if let content {
-            let figures = content.figures.prefix(12).map { "- \($0.caption)" }.joined(separator: "\n")
-            if !figures.isEmpty { prompt += "\n\nFigures (captions):\n" + figures }
-            prompt += "\n\nFull text:\n" + content.text
+    /// The Frontier Council, on the local models only (no plan or API cost). The members give opening statements,
+    /// then debate in rebuttal rounds, each speaking in turn and answering the others, until they all hold the same
+    /// verdict (after at least one rebuttal) or `CouncilAgent.maxRounds` is reached. Returns the moderator's ruling.
+    func convene(_ item: FrontierItem, onEvent: @escaping (CouncilAgent.Event) -> Void) async throws -> (ruling: String, by: String) {
+        guard local.isConfigured else {
+            throw LLMError(message: "The Council runs on your local models. Set up Local models in Settings.")
         }
-        let (text, by) = try await llm.completeLabeled(system: SkepticAgent.critiqueSystem, prompt: prompt)
-        return (text, by)
-    }
-
-    /// Convenes every configured provider in parallel, then has the moderator rule.
-    func convene(_ item: FrontierItem, onTurn: @escaping (CouncilAgent.Turn) -> Void) async throws -> String {
-        let panel = configuredProviders.compactMap { self.client($0) }
-        guard !panel.isEmpty else { throw LLMError(message: "Add at least one provider key in Settings.") }
-        let prompt = SkepticAgent.prompt(for: item)
+        // Each seat uses its own model when the server has it, otherwise the main model.
+        let installed = Set((try? await LocalModels.installed(at: local.url)) ?? [])
+        let seatModel = { (id: String) -> String in
+            if let own = self.local.councilModels[id], installed.contains(own) { return own }
+            return self.local.model
+        }
         var turns: [CouncilAgent.Turn] = []
-        await withTaskGroup(of: CouncilAgent.Turn.self) { group in
-            for llm in panel {
-                group.addTask {
-                    do {
-                        let t = try await llm.complete(system: CouncilAgent.seatSystem(llm.provider), prompt: prompt, maxTokens: 4000)
-                        return .init(provider: llm.provider, model: llm.model, text: t)
-                    } catch {
-                        return .init(provider: llm.provider, model: llm.model, text: error.localizedDescription, failed: true)
+        var outcome = CouncilAgent.Outcome([], rounds: 0)
+        for round in 1...CouncilAgent.maxRounds {
+            let before = turns
+            var thisRound: [CouncilAgent.Turn] = []
+            for seat in CouncilAgent.seats {
+                try Task.checkCancellation()
+                onEvent(.speaking(seat: seat.id, round: round))
+                // Opening statements are independent; in rebuttals each member hears everything said so far.
+                let heard = round == 1 ? before : turns
+                let model = seatModel(seat.id)
+                var turn: CouncilAgent.Turn
+                do {
+                    let raw = try await LocalModels.complete(system: CouncilAgent.seatSystem(seat, round: round),
+                                                             prompt: CouncilAgent.turnPrompt(item, heard: heard),
+                                                             maxTokens: 1500, temperature: 0.8, model: model).text
+                    let parsed = CouncilAgent.parse(raw)
+                    turn = .init(seat: seat.id, round: round, model: model, text: parsed.text, verdict: parsed.verdict)
+                    // No verdict line means no change of mind: keep the member's last verdict.
+                    if turn.verdict == nil, let last = turns.last(where: { $0.seat == seat.id && $0.verdict != nil }) {
+                        turn.verdict = last.verdict
+                        turn.kept = true
                     }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    turn = .init(seat: seat.id, round: round, model: model, text: error.localizedDescription, failed: true)
                 }
+                turns.append(turn)
+                thisRound.append(turn)
+                onEvent(.turn(turn))
             }
-            for await t in group { turns.append(t); onTurn(t) }
+            let spoke = thisRound.filter { !$0.failed }
+            guard !spoke.isEmpty else {
+                throw LLMError(message: "No council member could answer: \(thisRound.first?.text ?? "unknown error")")
+            }
+            outcome = CouncilAgent.Outcome(spoke, rounds: round)
+            if outcome.agreed && round >= 2 { break }
         }
-        let good = turns.filter { !$0.failed }
-        guard let moderator = roleClient(synthesizerProvider), !good.isEmpty else { return "" }
-        let transcript = good.map { "### \($0.provider.councilSeat.title) (\($0.provider.family))\n\($0.text)" }.joined(separator: "\n\n")
-        return try await moderator.complete(system: CouncilAgent.moderatorSystem,
-                                            prompt: prompt + "\n\nPanel:\n\n" + transcript, maxTokens: 4000)
+        onEvent(.outcome(outcome))
+        let r = try await LocalModels.complete(system: CouncilAgent.moderatorSystem,
+                                               prompt: CouncilAgent.moderatorPrompt(item, turns: turns, outcome: outcome),
+                                               maxTokens: 4000)
+        return (r.text, r.label)
     }
 
     // MARK: Cache

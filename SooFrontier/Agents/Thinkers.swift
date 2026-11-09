@@ -1,6 +1,6 @@
 import Foundation
 
-/// The Skeptic: an always-on heuristic pass over every item, plus an optional LLM deep critique.
+/// The Skeptic: an always-on heuristic pass over every item.
 enum SkepticAgent {
     private static let hypeWords = ["revolutionary", "game-changer", "game changer", "agi", "breakthrough", "insane",
                                     "mind-blowing", "unprecedented", "destroys", "kills", "beats gpt", "beats every",
@@ -123,26 +123,6 @@ enum SkepticAgent {
     finding those out. No preamble or sign-off; nothing but the five headings and their bullets.
     """
 
-    static let critiqueSystem = """
-    You are the Analyst inside SooFrontier, an app for AI researchers. Write a detailed, technically rigorous analysis of one item.
-    \(Structure.detailedInstructions)
-    TL;DR: 3–4 sentences: what the item claims; the key technical details (method or architecture, data, scale, and the \
-    headline numbers or benchmarks when given); and your verdict (Strong signal, Promising, Unverified, or Hype).
-    Takeaways: when the full text is provided, summarize the main takeaways the way an expert reader would after reading \
-    the whole paper: 6–8 bullets, each a bold one-line claim followed by a full paragraph (4–6 sentences). Cover, in order: \
-    the problem and why prior approaches fall short; the method or framework and its main components, walking through \
-    the pipeline step by step and citing the figure that shows it (for example "Figure 2 shows…"); the data and training \
-    setup; the main results with exact numbers and baselines; what the ablations reveal; and the limitations or red flags. \
-    Without the full text, give 4–6 elaborated bullets on the evidence, what is new, and any red flags.
-    Mathematical analysis: formalize the core idea. Give the objective or loss and the key equations, define every symbol, \
-    state the assumptions, and reason about complexity, scaling, or convergence. Sanity-check any reported numbers \
-    (for example whether a claimed speedup or accuracy gain is plausible). If the source gives too little to formalize, \
-    write the most likely formulation and say clearly that it is your reconstruction.
-    Potential opportunities: 3–5 bullets on concrete improvements or extensions that build on this work: \
-    follow-up experiments, better methods, new applications, or products and research directions it enables.
-    Be specific. If you only have the abstract or blurb, say what you cannot judge from it.
-    """
-
     static func prompt(for item: FrontierItem) -> String {
         """
         Item type: \(item.category.title)
@@ -203,33 +183,139 @@ enum SynthesizerAgent {
     }
 }
 
-/// The Frontier Council: each configured provider argues from its seat, then a moderator rules.
+/// The Frontier Council: five perspectives, played by the local models, debating in rounds until they agree.
 enum CouncilAgent {
+    struct Seat: Identifiable, Sendable {
+        var id: String
+        var title: String
+        var brief: String
+        var symbol: String
+    }
+
+    static let seats: [Seat] = [
+        .init(id: "skeptic", title: "The Skeptic", brief: "Rigorous methodologist. Hunt for missing baselines, eval leakage, cherry-picked results, and unstated limitations.", symbol: "magnifyingglass"),
+        .init(id: "builder", title: "The Builder", brief: "Pragmatic engineer. Judge what this enables today, what it costs to run, and how you'd actually ship with it.", symbol: "hammer"),
+        .init(id: "contrarian", title: "The Contrarian", brief: "Provocative outsider. Challenge the consensus narrative, name who benefits from the hype, and say what everyone is missing.", symbol: "arrow.triangle.swap"),
+        .init(id: "advocate", title: "The Open-Weights Advocate", brief: "Hands-on open-model practitioner. Judge whether this can be reproduced, run and fine-tuned on hardware you own, and what the closed labs are not telling you.", symbol: "lock.open"),
+        .init(id: "edge", title: "The Edge Engineer", brief: "On-device and small-model specialist. Judge whether this works on phones, laptops and edge chips, what it costs in memory and latency, and whether a small model could do the job.", symbol: "iphone"),
+    ]
+    /// Seats played by their own local model by default; the rest use the main local model.
+    static let defaultModels = ["edge": "hf.co/LiquidAI/LFM3-1.7B-GGUF:BF16"]
+    static let maxRounds = 4
+
+    static func seat(_ id: String) -> Seat { seats.first { $0.id == id } ?? seats[0] }
+
     struct Turn: Identifiable, Sendable {
-        var id: Provider { provider }
-        var provider: Provider
-        var model: String
+        var id: String { "\(seat)-\(round)" }
+        var seat: String
+        var round: Int
+        var model = ""
         var text: String
+        var verdict: String?
+        /// No verdict line this round, so the member's previous verdict stands.
+        var kept = false
         var failed = false
     }
 
-    static func seatSystem(_ p: Provider) -> String {
-        """
-        You sit on SooFrontier's Frontier Council as \(p.councilSeat.title). \(p.councilSeat.brief)
-        React to the item in at most 140 words of Markdown: open with a bold one-line take, then 2–3 bullets.
-        Be concrete and opinionated, and never generic.
+    struct Outcome: Sendable {
+        var counts: [String: Int]
+        var leading: String?
+        var agreed: Bool
+        var rounds: Int
+
+        init(_ turns: [Turn], rounds: Int) {
+            var c: [String: Int] = [:]
+            for t in turns { if let v = t.verdict { c[v, default: 0] += 1 } }
+            counts = c
+            leading = c.max { a, b in a.value < b.value }?.key
+            let voters = turns.filter { $0.verdict != nil }.count
+            agreed = voters > 1 && c.count == 1 && voters == turns.count
+            self.rounds = rounds
+        }
+
+        var tally: String { counts.sorted { $0.value > $1.value }.map { "\($0.value) \($0.key)" }.joined(separator: " · ") }
+    }
+
+    enum Event: Sendable {
+        case speaking(seat: String, round: Int)
+        case turn(Turn)
+        case outcome(Outcome)
+    }
+
+    private static let verdictRule = """
+    End with one final line exactly in this form: "Verdict: read", "Verdict: try", "Verdict: wait" or "Verdict: skip" \
+    (read = worth studying closely, try = worth running or building with now, wait = promising but not ready, skip = not worth the time).
+    """
+
+    static func seatSystem(_ seat: Seat, round: Int) -> String {
+        let others = seats.filter { $0.id != seat.id }.map(\.title).joined(separator: ", ")
+        let task = round == 1
+            ? "Give your opening statement on the item in at most 120 words of Markdown: a bold one-line take, then 2–3 bullets. Argue strictly from your own perspective."
+            : "This is rebuttal round \(round). In at most 110 words, respond to the other members by name: concede any point that is right, push back where you still disagree, and give the evidence or test that would change your mind. Do not repeat your earlier points. Change your verdict only if the arguments actually convinced you, and say so. The council is trying to reach an agreement it can stand behind, not a polite one."
+        return """
+        You sit on SooFrontier's Frontier Council as \(seat.title). \(seat.brief)
+        The other members are \(others). Be concrete, technical and opinionated, never generic. Write in English, even if the item is in another language. Speak only as yourself, in the first person: never write lines for other members, and don't copy their wording. Don't start with a heading or your own name.
+        \(task)
+        \(verdictRule)
         """
     }
 
+    static func transcript(_ turns: [Turn]) -> String {
+        var out = ""
+        var round = 0
+        for t in turns where !t.failed {
+            if t.round != round {
+                round = t.round
+                out += "\n## Round \(round)\(round == 1 ? ": opening statements" : ": rebuttals")\n"
+            }
+            out += "\n### \(seat(t.seat).title)\n\(t.text)\nVerdict: \(t.verdict ?? "none given")\n"
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func turnPrompt(_ item: FrontierItem, heard: [Turn]) -> String {
+        heard.isEmpty ? SkepticAgent.prompt(for: item) : SkepticAgent.prompt(for: item) + "\n\nThe debate so far:\n\n" + transcript(heard)
+    }
+
+    /// Splits a turn into its argument and its "Verdict: …" line (models vary the format, so be lenient).
+    static func parse(_ raw: String) -> (text: String, verdict: String?) {
+        let names = seats.map { $0.title.replacingOccurrences(of: "The ", with: "") }.joined(separator: "|")
+        var verdict: String?
+        var kept: [String] = []
+        let verdictLine = #/^[\s>#*_-]*(?:my |final |updated |revised )?verdict[\s*_]*[:\-–][\s*_]*(read|try|wait|skip)\b.*$/#.ignoresCase()
+        let selfName = try? Regex("^\\s*(?:#{1,6}\\s*|\\*\\*)(?:the )?(?:\(names))(?:\\*\\*)?:?\\s*$").ignoresCase()
+        for (i, line) in raw.components(separatedBy: "\n").enumerated() {
+            if let m = line.wholeMatch(of: verdictLine) { verdict = String(m.1).lowercased(); continue }
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("#") && t.lowercased().contains("verdict") { continue }
+            if i < 3, let selfName, line.wholeMatch(of: selfName) != nil { continue }
+            // A heading as the opening line ("# Opening statement — …") adds nothing.
+            if t.hasPrefix("#"), kept.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) { continue }
+            kept.append(line)
+        }
+        let text = kept.joined(separator: "\n")
+            .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text, verdict)
+    }
+
     static let moderatorSystem = """
-    You moderate SooFrontier's Frontier Council. Given an item and each panelist's take, rule on it.
+    You moderate SooFrontier's Frontier Council, where its members debated an item over several rounds. Rule on it. Write in English.
     \(Structure.instructions)
-    TL;DR: your ruling in 2–3 sentences, telling a researcher whether to read, try, wait, or skip, and the technical reason why.
-    Takeaways: 2–4 bullets on where the panel agrees, naming panelists.
+    TL;DR: your ruling in 2–3 sentences, telling a researcher whether to read, try, wait, or skip, and the technical reason why. \
+    If the council agreed, say how it got there; if not, rule anyway and name who dissents and why.
+    Takeaways: 2–4 bullets on the arguments that moved the debate, naming members and who changed their mind.
     Potential opportunities: 1–3 bullets on how the work could be improved or extended, including the experiment \
-    that would settle the panel's disagreement.
-    Under 170 words.
+    that would settle any remaining disagreement.
+    Under 190 words.
     """
+
+    static func moderatorPrompt(_ item: FrontierItem, turns: [Turn], outcome: Outcome) -> String {
+        let result = outcome.agreed
+            ? "the council agreed on \"\(outcome.leading ?? "")\" after \(outcome.rounds) rounds."
+            : "no full agreement after \(outcome.rounds) rounds (\(outcome.tally))."
+        return SkepticAgent.prompt(for: item) + "\n\n" + transcript(turns) + "\n\nOutcome: " + result
+    }
 }
 
 /// SooFrontier's house structure for everything the agents write: TL;DR, Takeaways, Potential opportunities.
@@ -241,20 +327,6 @@ enum Structure {
     ## Potential opportunities
     TL;DR is plain prose. Takeaways and Potential opportunities are bullet lists starting with "- ". No preamble or sign-off.
     \(elaboration)
-    """
-
-    /// The detailed four-part form used for story analyses.
-    static let detailedInstructions = """
-    Write in Markdown using exactly these four headings, in this order, and no others:
-    ## TL;DR
-    ## Takeaways
-    ## Mathematical analysis
-    ## Potential opportunities
-    TL;DR is plain prose. Takeaways and Potential opportunities are bullet lists starting with "- ". No preamble or sign-off.
-    \(elaboration)
-    Mathematical analysis is short paragraphs and bullets. Write math in Unicode, never LaTeX: use symbols such as \
-    Σ ∇ ∂ ‖·‖ ≈ ≤ ∈ θ λ, superscripts like x², and subscripts like x₀. Put each display equation on its own line, \
-    wrapped in single backticks, for example `L(θ) = E[‖x − f_θ(z)‖²]`.
     """
 
     /// How much each bullet should say.

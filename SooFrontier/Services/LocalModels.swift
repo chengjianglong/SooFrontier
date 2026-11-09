@@ -17,6 +17,8 @@ enum LocalModels {
         var model: String
         var fastModel: String
         var prefer: Bool
+        /// Frontier Council seats played by their own model (seat id → model tag); others use `model`.
+        var councilModels: [String: String] = [:]
         var isConfigured: Bool { URL(string: url)?.host() != nil && !model.isEmpty }
     }
 
@@ -26,7 +28,9 @@ enum LocalModels {
         return Config(url: d.string(forKey: "local.url") ?? "",
                       model: d.string(forKey: "local.model") ?? defaultModel,
                       fastModel: d.string(forKey: "local.fastModel") ?? defaultFastModel,
-                      prefer: d.bool(forKey: "local.prefer"))
+                      prefer: d.bool(forKey: "local.prefer"),
+                      councilModels: d.dictionary(forKey: "local.councilModels") as? [String: String]
+                          ?? CouncilAgent.defaultModels)
     }
 
     static func save(_ c: Config) {
@@ -35,9 +39,16 @@ enum LocalModels {
         d.set(c.model, forKey: "local.model")
         d.set(c.fastModel, forKey: "local.fastModel")
         d.set(c.prefer, forKey: "local.prefer")
+        d.set(c.councilModels, forKey: "local.councilModels")
     }
 
-    static func label(_ model: String) -> String { "\(model) · local" }
+    static func label(_ model: String) -> String { "\(shortName(model)) · local" }
+
+    /// A model tag short enough for a label: "hf.co/LiquidAI/LFM3-1.7B-GGUF:BF16" → "LFM3-1.7B".
+    static func shortName(_ model: String) -> String {
+        let last = model.split(separator: "/").last.map(String.init) ?? model
+        return last.replacingOccurrences(of: "-GGUF(:.*)?$", with: "", options: [.regularExpression, .caseInsensitive])
+    }
 
     /// Big models think for a while before the first byte; allow up to ten minutes per answer.
     private static let session: URLSession = {
@@ -57,9 +68,12 @@ enum LocalModels {
     }
 
     /// One answer from the local server's OpenAI-compatible endpoint.
-    static func complete(system: String, prompt: String, maxTokens: Int = 8000, fast: Bool = false) async throws -> (text: String, label: String) {
+    static func complete(system: String, prompt: String, maxTokens: Int = 8000, fast: Bool = false,
+                         temperature: Double? = nil, thinking: Bool? = nil,
+                         model override: String? = nil) async throws -> (text: String, label: String) {
         let c = config
-        let model = fast && !c.fastModel.isEmpty ? c.fastModel : c.model
+        let thinking = thinking ?? (maxTokens > 4000 && !fast)
+        let model = override ?? (fast && !c.fastModel.isEmpty ? c.fastModel : c.model)
         var req = URLRequest(url: URL(string: try base(c) + "/v1/chat/completions")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
@@ -68,8 +82,11 @@ enum LocalModels {
             "max_tokens": maxTokens,
             "messages": [["role": "system", "content": system], ["role": "user", "content": prompt]],
         ]
-        // gpt-oss reasons before it answers; keep that short so the token budget goes to the answer.
-        if model.hasPrefix("gpt-oss") { body["reasoning_effort"] = fast ? "low" : "medium" }
+        if let temperature { body["temperature"] = temperature }
+        // Thinking spends the same token budget as the answer. gpt-oss always reasons, so keep that short;
+        // thinking models such as Qwen3 skip it on short jobs.
+        if model.hasPrefix("gpt-oss") { body["reasoning_effort"] = fast || maxTokens <= 3000 ? "low" : "medium" }
+        else if !thinking { body["reasoning_effort"] = "none" }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let data: Data, resp: URLResponse
         do { (data, resp) = try await session.data(for: req) } catch {
@@ -84,6 +101,11 @@ enum LocalModels {
         let choice = (json["choices"] as? [[String: Any]])?.first
         let text = ((choice?["message"] as? [String: Any])?["content"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Ran out of budget while thinking: answer again without thinking.
+        if text.isEmpty, choice?["finish_reason"] as? String == "length", thinking, !model.hasPrefix("gpt-oss") {
+            return try await complete(system: system, prompt: prompt, maxTokens: maxTokens, fast: fast,
+                                      temperature: temperature, thinking: false, model: override)
+        }
         guard !text.isEmpty else {
             throw LLMError(message: "Local model (\(model)) returned no text (\(choice?["finish_reason"] as? String ?? "empty")).")
         }

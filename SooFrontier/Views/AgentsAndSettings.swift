@@ -14,20 +14,24 @@ struct AgentsView: View {
                 row(.skeptic, model: store.roleClient(store.skepticProvider)?.label)
                 row(.synthesizer, model: store.roleClient(store.synthesizerProvider)?.label)
             }
-            Section("Frontier Council") {
-                ForEach(Provider.allCases) { p in
+            Section {
+                ForEach(CouncilAgent.seats) { seat in
                     HStack {
-                        Image(systemName: p.symbol).foregroundStyle(p.color).frame(width: 28)
+                        Image(systemName: seat.symbol).foregroundStyle(.tint).frame(width: 28)
                         VStack(alignment: .leading) {
-                            Text("\(p.councilSeat.title) · \(p.family)").font(.body.weight(.medium))
-                            Text(p.councilSeat.brief).font(.caption).foregroundStyle(.secondary)
+                            Text(seat.title).font(.body.weight(.medium))
+                            Text(seat.brief).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(store.client(p) == nil ? "Not set up" : "Seated")
+                        Text(store.local.isConfigured ? "Seated" : "Not set up")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(store.client(p) == nil ? Color.secondary : Color.green)
+                            .foregroundStyle(store.local.isConfigured ? Color.green : Color.secondary)
                     }
                 }
+            } header: {
+                Text("Frontier Council")
+            } footer: {
+                Text("Every member runs on your local models (\(store.local.model)), so a session costs no plan usage or API fees. They debate in rounds until they agree, up to \(CouncilAgent.maxRounds) rounds, then the moderator rules.")
             }
         }
         .navigationTitle("Agent crew")
@@ -93,7 +97,7 @@ struct SettingsView: View {
                                                                      set: { store.setRoles(synth: $0, skeptic: store.skepticProvider) })) {
                     ForEach(Provider.allCases) { Text($0.family).tag($0) }
                 }
-                Picker("Story analysis (Analyze)", selection: Binding(get: { store.skepticProvider },
+                Picker("Quick reads", selection: Binding(get: { store.skepticProvider },
                                                                    set: { store.setRoles(synth: store.synthesizerProvider, skeptic: $0) })) {
                     ForEach(Provider.allCases) { Text($0.family).tag($0) }
                 }
@@ -339,6 +343,18 @@ private struct LocalModelSection: View {
                 .onSubmit { Task { await refresh() } }
             modelPicker("Main model", selection: $store.local.model)
             modelPicker("Fast model", selection: $store.local.fastModel)
+            DisclosureGroup("Council seats") {
+                ForEach(CouncilAgent.seats) { seat in
+                    Picker(seat.title.replacingOccurrences(of: "The ", with: ""), selection: Binding(
+                        get: { store.local.councilModels[seat.id] ?? "" },
+                        set: { store.local.councilModels[seat.id] = $0.isEmpty ? nil : $0 })) {
+                        Text("Main model").tag("")
+                        ForEach(modelOptions(store.local.councilModels[seat.id] ?? store.local.model), id: \.self) { m in
+                            Text(installed.isEmpty || installed.contains(m) ? m : "\(m) (not downloaded)").tag(m)
+                        }
+                    }
+                }
+            }
             Toggle("Prefer local models", isOn: $store.local.prefer)
             Button(testing ? "Testing…" : "Test local server") { Task { await test() } }
                 .disabled(testing || !store.local.isConfigured)
@@ -346,15 +362,18 @@ private struct LocalModelSection: View {
         } header: {
             Label("Local models · your GPU box", systemImage: "cpu")
         } footer: {
-            Text("An Ollama server on your own machine, such as a DGX Spark / GB10. Use its LAN address, its .local name, or its address on your VPN (Tailscale, WireGuard). The main model writes briefs, analyses and rulings; the fast model writes quick reads. It answers whenever Claude, GPT or Grok can't be reached, or for everything when \"Prefer local models\" is on. Live X and web research always uses Grok.")
+            Text("An Ollama server on your own machine, such as a DGX Spark / GB10. Use its LAN address, its .local name, or its address on your VPN (Tailscale, WireGuard). The main model writes briefs and digests and runs the Frontier Council and Brainstorm, at no plan or API cost (a Council seat can have its own model, like LFM3 for the Edge Engineer); the fast model writes quick reads. It answers whenever Claude, GPT or Grok can't be reached, or for everything when \"Prefer local models\" is on. Live X and web research always uses Grok.")
         }
         .task(id: store.local.url) { await refresh() }
     }
 
+    private func modelOptions(_ current: String) -> [String] {
+        Array(Set(installed + LocalModels.suggestedModels + [current])).sorted()
+    }
+
     private func modelPicker(_ title: String, selection: Binding<String>) -> some View {
-        let options = Array(Set(installed + LocalModels.suggestedModels + [selection.wrappedValue])).sorted()
-        return Picker(title, selection: selection) {
-            ForEach(options, id: \.self) { m in
+        Picker(title, selection: selection) {
+            ForEach(modelOptions(selection.wrappedValue), id: \.self) { m in
                 Text(installed.isEmpty || installed.contains(m) ? m : "\(m) (not downloaded)").tag(m)
             }
         }
