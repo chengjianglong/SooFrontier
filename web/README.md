@@ -15,20 +15,15 @@ Settings works as it does on the Mac. Each provider runs either on your plan, th
 
 ## Live discussion
 
-Brainstorm → **Live discussion** is a roundtable that never ends. Type a topic and five agents (Skeptic, Builder, Contrarian, Archivist and Synthesizer) debate it on your local models until you press Stop. Replies stream in token by token.
+Brainstorm → **Live discussion** is a roundtable that never ends: type a topic and five agents debate it on your local models until you press Stop, streaming as they write.
 
-<p align="center">
-  <img src="../docs/media/live-discussion.gif" alt="Live discussion in a phone browser: a topic is set and the Skeptic's reply streams in as it is written" width="270">
-</p>
+- **Jump in.** Type in the box and the next agents answer you first.
+- **Pause, Resume, Stop.** A discussion comes back paused after a restart.
+- **One agent.** Click its chip to change its model and characteristic. It applies from that agent's next turn.
+- **Settings chip.** Reply length, pace and memory (how many recent turns each agent sees). Each applies from the next turn.
+- **Private notes.** Each agent keeps its own notes, so prompts stay small. **Agent notes** shows them.
 
-- **Jump in.** Type in the box at the bottom and the next agents answer you first.
-- **Pause, Resume, Stop.** A discussion survives a restart and comes back paused.
-- **One agent.** Click an agent's chip to change its model and its characteristic, the persona it speaks from. It applies from that agent's next turn, which comes up next, and a note in the transcript records the change. Its private notes start again, so the old character doesn't pull it back. An agent with no choice of its own uses the main local model.
-- **Private notes.** Each agent keeps its own notes, rewritten every few turns on its own model, so prompts stay small enough for a short context window. **Agent notes** shows them.
-- **Settings chip.** Reply length (Short, Medium, Long), Pace (Full speed, Relaxed, Slow) and Memory, how many recent turns each agent sees (Short, Normal, Long). Each applies from the next turn. What an agent remembers is also capped by size, so prompts fit a small model's context window.
-- **Repetition.** A reply that mostly repeats recent turns is asked for again once, and if it still repeats, the Synthesizer opens a new angle.
-
-A new topic keeps each agent's model and characteristic and your settings, and starts with clean notes. It needs Local models set up in Settings, with the main model downloaded. The choices, their values, the starter topics and the speaking order are data in `public/live-config.json`.
+It needs Local models set up in Settings. The choices and starter topics are in `public/live-config.json`.
 
 ## What's stored where
 
@@ -66,6 +61,4 @@ cd web
 npm test
 ```
 
-This starts the real server against a fake Ollama, with a throwaway data folder, so it needs no network, no GPU box and none of your saved data. It covers the pages and state, streaming, changing an agent, the discussion settings, and pause and resume. It uses Node's built-in test runner, so it installs nothing.
-
-Setting `SOOFRONTIER_NO_REFRESH=1` makes the server skip fetching the feeds on start; the tests use it.
+This starts the server against a fake Ollama, so it needs no network or GPU box. `SOOFRONTIER_NO_REFRESH=1` skips fetching the feeds on start; the tests use it.

@@ -13,12 +13,12 @@ For people who work on AI: papers, tech reports, demos, code, models, products, 
 
 ## Demos
 
-Recorded on iPhone. Click a preview to watch the full video; the longer ones are sped up here.
+Recorded on iPhone, except Live discussion, on a Pixel. Click a preview to watch the full video; the longer ones are sped up here.
 
-| Brief | Research | Opinions | Video meeting |
-| :---: | :---: | :---: | :---: |
-| [<img src="docs/media/brief.gif" alt="Scrolling the morning Brief" width="200">](design/demo/brief.mp4) | [<img src="docs/media/research.gif" alt="Opening a paper and reading its structured summary" width="200">](design/demo/research.mp4) | [<img src="docs/media/opinions.gif" alt="Voices on X, then company blogs" width="200">](design/demo/opinions.mp4) | [<img src="docs/media/meeting.gif" alt="A Brainstorm video meeting: the Skeptic answers while the Builder waits" width="200">](design/demo/meeting.mp4) |
-| The day's read, written by the Council | From a paper list to a structured read | What the people you follow are saying | Panelists speak their answers |
+| Brief | Research | Opinions | Video meeting | Live discussion |
+| :---: | :---: | :---: | :---: | :---: |
+| [<img src="docs/media/brief.gif" alt="Scrolling the morning Brief" width="200">](design/demo/brief.mp4) | [<img src="docs/media/research.gif" alt="Opening a paper and reading its structured summary" width="200">](design/demo/research.mp4) | [<img src="docs/media/opinions.gif" alt="Voices on X, then company blogs" width="200">](design/demo/opinions.mp4) | [<img src="docs/media/meeting.gif" alt="A Brainstorm video meeting: the Skeptic answers while the Builder waits" width="200">](design/demo/meeting.mp4) | [<img src="docs/media/live-discussion.gif" alt="A topic is set and the Skeptic's reply streams in" width="200">](web/README.md#live-discussion) |
+| The day's read, written by the Council | From a paper list to a structured read | What the people you follow are saying | Panelists speak their answers | Agents debate a topic on local models |
 
 ## How it works
 
@@ -64,12 +64,7 @@ Every morning at 6:00 am Pacific the harvesters run in parallel and publish as t
   <img src="design/brainstorm-faces.png" alt="The five Brainstorm panelists: Skeptic, Builder, Contrarian, Archivist and Synthesizer" width="720">
 </p>
 
-- **Live discussion (browser version only).** Type a topic and the same five panelists debate it on your local models until you stop them, streaming as they write. Each has its own model and characteristic, which you change by clicking it, plus private notes that keep prompts small. You can jump in, pause and resume, and set the reply length, pace and memory. See [the browser version](web/README.md#live-discussion).
-
-<p align="center">
-  <a href="web/README.md#live-discussion"><img src="docs/media/live-discussion.gif" alt="Live discussion in a phone browser: a topic is set and the Skeptic's reply streams in as it is written" width="200"></a>
-</p>
-
+- **Live discussion.** Five panelists debate a topic you type on your local models until you stop them. Each can have its own model and characteristic.
 - **A daily rhythm.** A fresh harvest at 6:00 am Pacific, and read-aloud that keeps going on the lock screen.
 
 ## Models
