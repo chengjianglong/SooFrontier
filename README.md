@@ -64,6 +64,12 @@ Every morning at 6:00 am Pacific the harvesters run in parallel and publish as t
   <img src="design/brainstorm-faces.png" alt="The five Brainstorm panelists: Skeptic, Builder, Contrarian, Archivist and Synthesizer" width="720">
 </p>
 
+- **Live discussion (browser version only).** Type a topic and the same five panelists debate it on your local models until you stop them, streaming as they write. Each has its own model and characteristic, which you change by clicking it, plus private notes that keep prompts small. You can jump in, pause and resume, and set the reply length, pace and memory. See [the browser version](web/README.md#live-discussion).
+
+<p align="center">
+  <a href="web/README.md#live-discussion"><img src="docs/media/live-discussion.gif" alt="Live discussion in a phone browser: a topic is set and the Skeptic's reply streams in as it is written" width="200"></a>
+</p>
+
 - **A daily rhythm.** A fresh harvest at 6:00 am Pacific, and read-aloud that keeps going on the lock screen.
 
 ## Models
@@ -72,7 +78,7 @@ Each provider runs either on a plan you already pay for, through its official CL
 
 ### Local models on your own GPU
 
-Open-weight models can run on your own machine, such as an NVIDIA DGX Spark / GB10 with 128 GB, through [Ollama](https://ollama.com). They write whenever Claude, GPT or Grok can't be reached, or answer first when **Prefer local models** is on. Live X and web research always goes to Grok.
+Open-weight models can run on your own machine, such as an NVIDIA DGX Spark / GB10 with 128 GB, through [Ollama](https://ollama.com). The Council, Brainstorm and Live discussion run only on them. They also write whenever Claude, GPT or Grok can't be reached, or answer first when **Prefer local models** is on. Live X and web research always goes to Grok.
 
 | Role | Default | Why |
 | --- | --- | --- |
@@ -109,7 +115,7 @@ cd web
 node server.mjs
 ```
 
-Then open http://localhost:5180.
+Then open http://localhost:5180. To run the tests, `cd web && npm test`; they use a fake model server, so they need no network or GPU box.
 
 ![The morning Brief in a browser: the TL;DR, takeaways and top signals across all lanes](docs/media/web-brief.png)
 
@@ -126,7 +132,7 @@ Then open http://localhost:5180.
 | `SooFrontier/Store` | App state, daily refresh, appearance |
 | `SooFrontier/Views`, `Brainstorm` | The desks, story pages and the meeting room |
 | `SooFrontier/Resources` | The video meeting stage and panelist portraits |
-| `web` | The browser version |
+| `web` | The browser version: `lib` is the server logic, `public` the UI, `test` the smoke tests |
 | `design` | App icon sources and demo recordings |
 | `docs/media` | README previews and screenshots |
 
