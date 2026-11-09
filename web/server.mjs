@@ -2,9 +2,10 @@
 //   node server.mjs        then open http://localhost:5180
 // By default it only answers this machine. See README.md for reaching it from other devices.
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { createReadStream, statSync } from 'node:fs';
+import { createReadStream, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
+import { homedir } from 'node:os';
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PROVIDERS, SECTIONS } from './public/shared.js';
@@ -20,8 +21,26 @@ const HOST = process.env.HOST ?? '127.0.0.1';
 const LOOPBACK = ['127.0.0.1', '::1', 'localhost'].includes(HOST);
 
 // Anyone who reaches this server can spend your plan, so anything beyond this machine needs the access code.
-const ACCESS_CODE = LOOPBACK ? null : process.env.SOOFRONTIER_CODE || randomBytes(12).toString('base64url');
-const sessionToken = randomBytes(32).toString('base64url');
+// The code and the sign-in secret are kept across restarts (in the data folder, readable only by you), so a
+// restart doesn't sign every device out.
+function loadAuth() {
+  const dir = process.env.SOOFRONTIER_DATA ?? join(homedir(), '.soofrontier-web');
+  const path = join(dir, 'auth.json');
+  let saved = {};
+  try { saved = JSON.parse(readFileSync(path, 'utf8')); } catch {}
+  const auth = {
+    code: process.env.SOOFRONTIER_CODE || saved.code || randomBytes(12).toString('base64url'),
+    session: saved.session || randomBytes(32).toString('base64url'),
+  };
+  if (auth.code !== saved.code || auth.session !== saved.session) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(path, JSON.stringify(auth), { mode: 0o600 });
+  }
+  return auth;
+}
+const AUTH = LOOPBACK ? null : loadAuth();
+const ACCESS_CODE = AUTH?.code ?? null;
+const sessionToken = AUTH?.session ?? randomBytes(32).toString('base64url');
 const sha = (s) => createHash('sha256').update(s).digest();
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',

@@ -187,10 +187,11 @@ export const HARVESTERS = {
     const batches = [];
     for (let i = 0; i < voices.length; i += 7) batches.push(voices.slice(i, i + 7));
     report(`Asking Grok about ${voices.length} voices on X…`);
-    const system = 'You are the Listener agent in SooFrontier, an app for AI researchers. Use X search to read recent posts. Reply ONLY with a JSON array, with no prose before or after it.';
+    const system = 'You are the Listener agent in SooFrontier, an app for AI researchers. Use web search to find recent posts on X (x.com). Reply ONLY with a JSON array, with no prose before or after it.';
+    const today = new Date().toISOString().slice(0, 10);
     const results = await Promise.allSettled(batches.map(async (batch) => {
       const handles = batch.map((v) => `@${v.handle}`).join(', ');
-      const prompt = `Use X search on posts from these accounts in the last 7 days: ${handles}.
+      const prompt = `Today is ${today}. Use web search to find posts on X (x.com) from these accounts in the last 7 days: ${handles}.
 For each account, summarize their most notable opinion about AI.
 Reply ONLY with a JSON array of objects with keys: name, handle (without @), headline (at most 12 words), summary (2 sentences), url (link to the post on x.com), date (ISO 8601).
 Skip accounts with no AI posts in that window. Never invent posts or links.`;

@@ -89,10 +89,13 @@ async function runCLI(provider, { model, system, prompt, research, signal }) {
       if (model) args.push('-m', model);
       args.push(combined);
     } else {
-      // The strict sandbox confines reads and writes to the empty scratch folder, and with no
-      // --always-approve a headless run refuses shell commands. Research mode adds searches of X and the web.
-      args = ['--no-auto-update', '--no-alt-screen', '--output-format', 'streaming-json', '--max-turns', research ? '8' : '1', '--cwd', work, '--sandbox', 'strict'];
+      // Grok gets no file, shell or add-on tools at all, so nothing it does can touch this computer. (Its own
+      // bubblewrap sandbox can't start where Linux blocks unprivileged user namespaces, as Ubuntu 24.04+ does.)
+      // Research mode allows web search, which xAI runs on its side and which covers posts on X, plus web fetch.
+      args = ['--no-auto-update', '--no-alt-screen', '--output-format', 'streaming-json', '--max-turns', research ? '8' : '1', '--cwd', work,
+        '--tools', research ? 'web_search,web_fetch' : 'web_fetch', '--disallowed-tools', 'search_tool,use_tool'];
       if (research) args.push('--allow', 'WebSearch', '--allow', 'WebFetch');
+      else args.push('--disable-web-search');
       if (model) args.push('-m', model);
       args.push('-p', combined);
     }

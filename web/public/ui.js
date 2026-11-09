@@ -111,11 +111,15 @@ export const store = {
 
 /** fetch, with a useful message when the server can't be reached instead of the browser's "Failed to fetch". */
 export async function request(path, options) {
-  try { return await fetch(path, options); }
+  let r;
+  try { r = await fetch(path, options); }
   catch (e) {
     if (e.name === 'AbortError') throw e;
     throw new Error("Can't reach the SooFrontier server. Check that it's still running (node server.mjs), then try again.");
   }
+  // Signed out (the cookie expired or the access code changed): reload into the sign-in page instead of erroring.
+  if (r.status === 401) { location.reload(); throw new Error('Signing in…'); }
+  return r;
 }
 
 export async function api(path, body, options = {}) {
