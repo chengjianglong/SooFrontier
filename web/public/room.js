@@ -1,6 +1,6 @@
 // The Brainstorm room: you and the agent panel, by text or by voice. Ported from Brainstorm/BrainstormRoom.swift and BrainstormVoice.swift.
 import { PANELISTS, speakable, castVoices } from './shared.js';
-import { api, store } from './ui.js';
+import { api, inline, request, store } from './ui.js';
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -168,7 +168,8 @@ export class Room {
   members = new Set(store.get('brainstorm.members', PANELISTS.map((p) => p.id)));
   handsFree = store.get('brainstorm.handsFree', false);
   speakReplies = store.get('brainstorm.speak', false);
-  mode = store.get('brainstorm.mode', 'chat');
+  mode = store.get('brainstorm.mode2', 'live');
+  draft = null;
   onChange = () => {};
   voice = new Voice();
   #turn = 0;
@@ -318,16 +319,52 @@ export class Room {
     if (!this.voice.isSpeaking) this.#panelDone();
   }
 
+  /** Asks for the turn and shows the reply as it streams in. */
+  async #streamTurn(p, optional, summary, id) {
+    const r = await request('/api/brainstorm/turn/stream', { method: 'POST', headers: { 'content-type': 'application/json' }, signal: this.#abort.signal,
+      body: JSON.stringify({ panelistId: p.id, members: [...this.members], optional, summary, useFrontier: this.useFrontierContext,
+        messages: this.messages.slice(-24).map((m) => ({ name: m.name, text: m.text })) }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `Request failed (${r.status})`);
+    const decoder = new TextDecoder();
+    let buffer = '', done = null;
+    for await (const chunk of r.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const e = JSON.parse(line);
+        if (e.error) throw new Error(e.error);
+        if (e.done) done = e.done;
+        if (e.delta !== undefined && id === this.#turn) this.#showDraft(p, e.delta, optional);
+      }
+    }
+    if (!done) throw new Error('The reply was cut off.');
+    return done;
+  }
+
+  /** Tokens arrive many times a second: patch the open bubble in place instead of rebuilding the page. */
+  #showDraft(p, text, optional) {
+    const t = text.trim().toUpperCase();
+    if (!t || (optional && 'PASS'.startsWith(t)) || t.startsWith('PASS')) return;
+    const first = this.draft?.speaker !== p.id;
+    this.draft = { speaker: p.id, name: p.name, text };
+    const el = document.querySelector('.chat-draft .draft-text');
+    if (!first && el) {
+      el.replaceChildren(inline(text));
+      const feed = document.querySelector('.transcript');
+      if (feed && feed.scrollHeight - feed.scrollTop - feed.clientHeight < 160) feed.scrollTop = feed.scrollHeight;
+    } else this.onChange();
+  }
+
   /** One panelist's turn. Returns the reply, or null if they passed or failed. */
   async #speak({ panelist: p, optional = false, summary = false }, id) {
     this.phase = { kind: 'thinking', name: p.name };
     this.onChange();
     this.#abort = new AbortController();
     try {
-      const { text, by } = await api('/api/brainstorm/turn', {
-        panelistId: p.id, members: [...this.members], optional, summary, useFrontier: this.useFrontierContext,
-        messages: this.messages.slice(-24).map((m) => ({ name: m.name, text: m.text })),
-      }, { signal: this.#abort.signal });
+      const { text, by } = await this.#streamTurn(p, optional, summary, id);
+      this.draft = null;
       if (id !== this.#turn) return null;
       if (!text || text.toUpperCase().startsWith('PASS')) return null;
       this.#add({ speaker: p.id, name: p.name, text, model: by, isSummary: summary });
@@ -339,6 +376,7 @@ export class Room {
       }
       return text;
     } catch (e) {
+      this.draft = null;
       if (id !== this.#turn || e.name === 'AbortError') return null;
       this.#add({ speaker: p.id, name: p.name, text: `(couldn't join: ${e.message})`, model: null });
       return null;

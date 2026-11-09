@@ -7,6 +7,7 @@ import { AGENTS, CATEGORIES, COUNCIL_DEFAULT_MODELS, COUNCIL_MAX_ROUNDS, COUNCIL
 import { HARVESTERS } from './harvest.mjs';
 import { LOCAL, cliPath, localModels, makeClient, makeLocalClient, withFallback } from './llm.mjs';
 import { arxivID, keyFigures, readPaper } from './net.mjs';
+import { AgentRoom } from './agentroom.mjs';
 import * as P from './prompts.mjs';
 
 const DATA_DIR = process.env.SOOFRONTIER_DATA ?? join(homedir(), '.soofrontier-web');
@@ -92,6 +93,16 @@ export class FrontierStore extends EventEmitter {
     this.lastRefresh = c.lastRefresh ?? null;
     this.digests = c.digests ?? {};
     this.quickReads = c.quickReads ?? {};
+    this.live = new AgentRoom({ config: () => this.liveConfig(), persist: (state) => saveJSON('live-room.json', state), saved: loadJSON('live-room.json', null) });
+  }
+
+  /** What the live room needs from the local server. Each agent's own model and characteristic live in the room. */
+  liveConfig() {
+    const l = this.settings.local;
+    const have = this.localInstalled;
+    if (!l.url || !have) throw new Error(`Can't reach the local model server${l.url ? ` at ${l.url}` : ''}. Set it up in Settings → Local models.`);
+    if (!have.includes(l.model)) throw new Error(`The main local model ${l.model} isn't on the server. Choose one in Settings → Local models.`);
+    return { url: l.url, installed: have, main: l.model };
   }
 
   // MARK: Providers
@@ -438,20 +449,38 @@ export class FrontierStore extends EventEmitter {
 
   // MARK: Brainstorm
 
+  #panelPrompts({ panelistId, members, messages, optional, summary, useFrontier }) {
+    const panelist = PANELISTS.find((p) => p.id === panelistId);
+    if (!panelist) throw new Error('Unknown panelist');
+    return {
+      panelist, maxTokens: summary ? 3000 : 800,
+      system: P.panelSystem(panelist, members, { summary, frontier: useFrontier ? topSignals(this.items) : null }),
+      prompt: P.panelPrompt(panelist, messages, { optional, summary }),
+    };
+  }
+
+  #brainstormClient() {
+    const llm = this.localClient();
+    if (!llm) throw new Error('Brainstorm runs on your local models. Set up Local models in Settings (and download the main model).');
+    return llm;
+  }
+
   /**
    * One panelist's turn, always on the local main model (no plan or API cost, and no fallback to a provider).
    * The browser owns the room and asks for one reply at a time.
    */
-  async panelTurn({ panelistId, members, messages, optional, summary, useFrontier }, signal) {
-    const panelist = PANELISTS.find((p) => p.id === panelistId);
-    if (!panelist) throw new Error('Unknown panelist');
-    const llm = this.localClient();
-    if (!llm) throw new Error('Brainstorm runs on your local models. Set up Local models in Settings (and download the main model).');
-    const text = await llm.complete({
-      system: P.panelSystem(panelist, members, { summary, frontier: useFrontier ? topSignals(this.items) : null }),
-      prompt: P.panelPrompt(panelist, messages, { optional, summary }),
-      maxTokens: summary ? 3000 : 800, signal,
-    });
+  async panelTurn(args, signal) {
+    const { panelist, system, prompt, maxTokens } = this.#panelPrompts(args);
+    const llm = this.#brainstormClient();
+    const text = await llm.complete({ system, prompt, maxTokens, signal });
+    return { text: P.cleanReply(text, panelist.name), by: llm.label };
+  }
+
+  /** The same turn, streamed token by token. */
+  async panelTurnStream(args, onDelta, signal) {
+    const { panelist, system, prompt, maxTokens } = this.#panelPrompts(args);
+    const llm = this.#brainstormClient();
+    const text = await llm.stream({ system, prompt, maxTokens, signal, onDelta: (t) => onDelta(P.cleanReply(t, panelist.name)) });
     return { text: P.cleanReply(text, panelist.name), by: llm.label };
   }
 
@@ -466,6 +495,8 @@ export class FrontierStore extends EventEmitter {
 
   /** Refreshes at 6:00 am Pacific, and on start or after sleep if that run was missed. */
   startSchedule() {
+    // Tests set this so starting the server never goes out to the news feeds.
+    if (process.env.SOOFRONTIER_NO_REFRESH) { this.refreshLocal(); return; }
     const check = () => { if (this.isDue()) this.refresh(); };
     this.refreshLocal().then(() => { if (!this.items.length) this.refresh(); else check(); });
     setInterval(() => this.refreshLocal(), 60_000).unref?.();

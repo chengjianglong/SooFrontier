@@ -10,3 +10,8 @@ node_modules/
 
 # macOS
 .DS_Store
+
+# Agent skills stay on this machine
+.claude/skills/
+.agents/
+SKILLS/

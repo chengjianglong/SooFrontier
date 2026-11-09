@@ -192,6 +192,50 @@ export function makeLocalClient({ url, model, fastModel = model }) {
     provider: 'local', mode: 'local', model, label: `${model} · local`,
     /** The same server with its fast model, for quick jobs. */
     withModel() { return makeLocalClient({ url, model: fastModel || model, fastModel }); },
+    /** Like complete(), but calls onDelta(textSoFar) as tokens arrive (OpenAI-style server-sent events). */
+    async stream({ system, prompt, maxTokens = 8000, temperature, signal, onDelta }, thinking = maxTokens > 4000) {
+      const timeout = AbortSignal.timeout(600_000);
+      const body = { model, max_tokens: maxTokens, stream: true, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };
+      if (temperature !== undefined) body.temperature = temperature;
+      // Same as complete(): thinking models such as Qwen3 skip thinking on short jobs, which would otherwise eat the token budget.
+      if (model.startsWith('gpt-oss')) body.reasoning_effort = maxTokens <= 3000 ? 'low' : 'medium';
+      else if (!thinking) body.reasoning_effort = 'none';
+      let r;
+      try {
+        r = await fetch(`${trimURL(url)}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+          signal: signal ? anySignal([signal, timeout]) : timeout });
+      } catch (e) {
+        if (signal?.aborted) throw new Error('Cancelled');
+        throw new Error(`Can't reach the local model server at ${url} (${e.cause?.code ?? e.message}).`);
+      }
+      if (r.status !== 200) {
+        const json = await r.json().catch(() => ({}));
+        throw new Error(`Local model (${model}): ${json.error?.message ?? json.error ?? `HTTP ${r.status}`}`);
+      }
+      let text = '', buffer = '', finish = null;
+      const decoder = new TextDecoder();
+      try {
+        for await (const chunk of r.body) {
+          buffer += decoder.decode(chunk, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data:') || line.includes('[DONE]')) continue;
+            let j; try { j = JSON.parse(line.slice(5)); } catch { continue; }
+            const c = j.choices?.[0];
+            if (c?.finish_reason) finish = c.finish_reason;
+            const piece = c?.delta?.content;
+            if (piece) { text += piece; onDelta?.(text); }
+          }
+        }
+      } catch (e) {
+        if (signal?.aborted) throw new Error('Cancelled');
+        throw new Error(`Lost the local model stream (${e.cause?.code ?? e.message}).`);
+      }
+      text = text.trim();
+      if (!text) throw new Error(`Local model (${model}) returned no text (${finish ?? 'empty'}).`);
+      return text;
+    },
     async complete({ system, prompt, maxTokens = 8000, temperature, signal }, thinking = maxTokens > 4000) {
       const timeout = AbortSignal.timeout(600_000);
       const body = { model, max_tokens: maxTokens, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };

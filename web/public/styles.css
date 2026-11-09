@@ -301,3 +301,18 @@ section { min-width: 0; }
   .filter-row .check { font-size: .78rem; }
   .brand { font-size: .94rem; }
 }
+
+/* Brainstorm Live */
+.live-topic { display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.live-controls { display: flex; gap: 8px; padding: 8px 16px 0; max-width: 820px; margin: auto; width: 100%; box-sizing: border-box; }
+.live-notes { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; background: var(--bg2); border-radius: 10px; }
+.live-notes p { margin: 2px 0 0; }
+.panel-chip.talking { outline: 2px solid var(--agent); outline-offset: 1px; }
+.chip-wrap { position: relative; }
+.panel-chip.open { outline: 2px solid var(--agent); outline-offset: 1px; }
+.popover { position: fixed; z-index: 30; max-height: calc(100dvh - 120px); overflow-y: auto; width: min(340px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, .22); }
+.popover-head { display: flex; justify-content: space-between; align-items: center; }
+.popover-field { display: flex; flex-direction: column; gap: 4px; }
+.popover-field textarea { resize: vertical; }
+.popover-actions { display: flex; gap: 8px; }
+.live-note { text-align: center; font-style: italic; padding: 2px 16px; }
