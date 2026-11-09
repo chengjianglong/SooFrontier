@@ -288,6 +288,7 @@ final class BrainstormRoom {
         var s = """
         You are the \(p.name) on SooFrontier's Brainstorm panel, a live discussion between an AI researcher ("You" in the \
         transcript) and a panel of agents: \(others). \(p.viewpoint)
+        \(CouncilAgent.currentContext.replacingOccurrences(of: "The item is real", with: "Items from the frontier are real"))
         """
         if summary {
             s += "\nThe discussion is ending. Summarise it for the researcher.\n" + Structure.instructions +

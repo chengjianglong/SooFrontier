@@ -10,7 +10,11 @@ class Voice {
   onCommit = () => {};
   onError = () => {};
   onFinishedSpeaking = () => {};
+  /** A panelist started or stopped speaking (the meeting's caption follows the voice). */
+  onSpeakerChange = () => {};
   speakingPanelist = null;
+  /** The message being spoken now, so the meeting's caption shows those words and not a later reply. */
+  speakingRef = null;
   pause = 1800;
   #recognition = null;
   #silence = null;
@@ -81,7 +85,7 @@ class Voice {
     return this.#cast[panelist] ?? null;
   }
 
-  speak(text, panelist) {
+  speak(text, panelist, ref = null) {
     if (!('speechSynthesis' in window)) { queueMicrotask(() => this.onFinishedSpeaking()); return; }
     const u = new SpeechSynthesisUtterance(text);
     const cast = this.#voiceFor(panelist);
@@ -94,11 +98,13 @@ class Voice {
     u.onstart = () => {
       if (run !== this.#run) return;
       this.speakingPanelist = panelist;
+      this.speakingRef = ref;
       this.#words = words;
       this.#started = performance.now();
       this.#sawBoundary = false;
       this.#word = words[0] ?? '';
       this.#wordStarted = this.#started;
+      this.onSpeakerChange();
     };
     u.onboundary = (e) => {
       if (run !== this.#run || e.name !== 'word') return;
@@ -111,7 +117,9 @@ class Voice {
       this.#word = '';
       this.#words = [];
       this.speakingPanelist = null;
+      this.speakingRef = null;
       this.#pending = Math.max(0, this.#pending - 1);
+      this.onSpeakerChange();
       if (!this.#pending) this.onFinishedSpeaking();
     };
     u.onend = done;
@@ -123,6 +131,7 @@ class Voice {
     this.#run++;
     this.#pending = 0;
     this.speakingPanelist = null;
+    this.speakingRef = null;
     this.#word = '';
     this.#words = [];
     if ('speechSynthesis' in window) speechSynthesis.cancel();
@@ -183,6 +192,7 @@ export class Room {
     this.voice.onCommit = (t) => this.send(t);
     this.voice.onError = (m) => { this.error = m; this.phase = { kind: 'idle' }; this.onChange(); };
     this.voice.onFinishedSpeaking = () => this.#panelDone();
+    this.voice.onSpeakerChange = () => this.onChange();
   }
 
   get panel() { return PANELISTS.filter((p) => this.members.has(p.id)); }
@@ -238,6 +248,8 @@ export class Room {
 
   /** The panelist speaking now, else the newest panelist line: drives the meeting caption. */
   get captionMessage() {
+    const ref = this.voice.speakingRef;
+    if (ref && this.messages.includes(ref)) return ref;
     const speaking = this.voice.speakingPanelist;
     const panelLines = this.messages.filter((m) => m.speaker !== 'user');
     return (speaking && panelLines.findLast((m) => m.speaker === speaking)) || panelLines.at(-1) || null;
@@ -371,7 +383,7 @@ export class Room {
       this.#lastSpoke[p.id] = Date.now();
       if (this.speakReplies || this.handsFree || this.mode === 'video') {
         this.phase = { kind: 'speaking', name: p.name };
-        this.voice.speak(speakable(text), p.id);
+        this.voice.speak(speakable(text), p.id, this.messages.at(-1));
         this.onChange();
       }
       return text;

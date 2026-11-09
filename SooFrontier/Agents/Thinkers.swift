@@ -247,6 +247,11 @@ enum CouncilAgent {
     (read = worth studying closely, try = worth running or building with now, wait = promising but not ready, skip = not worth the time).
     """
 
+    /// Local models' training data ends before today, so tell them the date and that the item is real.
+    static var currentContext: String {
+        "Today is \(Date.now.formatted(.iso8601.year().month().day())). The item is real and recent: SooFrontier's agents found it at its source. Dates, version numbers and arXiv IDs later than your training data are expected, not signs of a mistake or a hallucination. Judge the substance, never whether the item exists."
+    }
+
     static func seatSystem(_ seat: Seat, round: Int) -> String {
         let others = seats.filter { $0.id != seat.id }.map(\.title).joined(separator: ", ")
         let task = round == 1
@@ -254,6 +259,7 @@ enum CouncilAgent {
             : "This is rebuttal round \(round). In at most 110 words, respond to the other members by name: concede any point that is right, push back where you still disagree, and give the evidence or test that would change your mind. Do not repeat your earlier points. Change your verdict only if the arguments actually convinced you, and say so. The council is trying to reach an agreement it can stand behind, not a polite one."
         return """
         You sit on SooFrontier's Frontier Council as \(seat.title). \(seat.brief)
+        \(currentContext)
         The other members are \(others). Be concrete, technical and opinionated, never generic. Write in English, even if the item is in another language. Speak only as yourself, in the first person: never write lines for other members, and don't copy their wording. Don't start with a heading or your own name.
         \(task)
         \(verdictRule)
@@ -293,7 +299,14 @@ enum CouncilAgent {
             if t.hasPrefix("#"), kept.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) { continue }
             kept.append(line)
         }
-        let text = kept.joined(separator: "\n")
+        var joined = kept.joined(separator: "\n")
+        // No verdict line? It may be tacked onto the end of the last paragraph ("…until then. Verdict: wait").
+        let tail = #/[\s*_]*verdict[\s*_]*[:\-–][\s*_]*(read|try|wait|skip)\b[*_.!]*\s*$/#.ignoresCase()
+        if verdict == nil, let m = joined.firstMatch(of: tail) {
+            verdict = String(m.1).lowercased()
+            joined.removeSubrange(m.range)
+        }
+        let text = joined
             .replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return (text, verdict)
@@ -311,10 +324,11 @@ enum CouncilAgent {
     """
 
     static func moderatorPrompt(_ item: FrontierItem, turns: [Turn], outcome: Outcome) -> String {
+        let verdict = outcome.leading ?? ""
         let result = outcome.agreed
-            ? "the council agreed on \"\(outcome.leading ?? "")\" after \(outcome.rounds) rounds."
-            : "no full agreement after \(outcome.rounds) rounds (\(outcome.tally))."
-        return SkepticAgent.prompt(for: item) + "\n\n" + transcript(turns) + "\n\nOutcome: " + result
+            ? "the council agreed on \"\(verdict)\" after \(outcome.rounds) rounds. Your ruling is \"\(verdict)\": never overrule the council."
+            : "no full agreement after \(outcome.rounds) rounds (\(outcome.tally)). Rule with the majority, \"\(verdict)\", and name who dissents and why."
+        return currentContext + "\n\n" + SkepticAgent.prompt(for: item) + "\n\n" + transcript(turns) + "\n\nOutcome: " + result
     }
 }
 

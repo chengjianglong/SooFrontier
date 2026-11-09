@@ -88,12 +88,16 @@ export function offlineBrief(tops) {
 
 const VERDICT_RULE = `End with one final line exactly in this form: "Verdict: read", "Verdict: try", "Verdict: wait" or "Verdict: skip" (read = worth studying closely, try = worth running or building with now, wait = promising but not ready, skip = not worth the time).`;
 
+/** Local models' training data ends before today, so tell them the date and that the item is real. */
+export const currentContext = () => `Today is ${new Date().toLocaleDateString('en-CA')}. The item is real and recent: SooFrontier's agents found it at its source. Dates, version numbers and arXiv IDs later than your training data are expected, not signs of a mistake or a hallucination. Judge the substance, never whether the item exists.`;
+
 export function councilSeatSystem(seat, round) {
   const others = COUNCIL_SEATS.filter((s) => s.id !== seat.id).map((s) => s.title).join(', ');
   const task = round === 1
     ? 'Give your opening statement on the item in at most 120 words of Markdown: a bold one-line take, then 2–3 bullets. Argue strictly from your own perspective.'
     : `This is rebuttal round ${round}. In at most 110 words, respond to the other members by name: concede any point that is right, push back where you still disagree, and give the evidence or test that would change your mind. Do not repeat your earlier points. Change your verdict only if the arguments actually convinced you, and say so. The council is trying to reach an agreement it can stand behind, not a polite one.`;
   return `You sit on SooFrontier's Frontier Council as ${seat.title}. ${seat.brief}
+${currentContext()}
 The other members are ${others}. Be concrete, technical and opinionated, never generic. Write in English, even if the item is in another language. Speak only as yourself, in the first person: never write lines for other members, and don't copy their wording. Don't start with a heading or your own name.
 ${task}
 ${VERDICT_RULE}`;
@@ -120,17 +124,21 @@ Takeaways: 2–4 bullets on the arguments that moved the debate, naming members 
 Potential opportunities: 1–3 bullets on how the work could be improved or extended, including the experiment that would settle any remaining disagreement.
 Under 190 words.`;
 
-export const moderatorPrompt = (item, turns, outcome) => `${itemPrompt(item)}
+export const moderatorPrompt = (item, turns, outcome) => `${currentContext()}
+
+${itemPrompt(item)}
 
 ${councilTranscript(turns)}
 
-Outcome: ${outcome.agreed ? `the council agreed on "${outcome.leading}" after ${outcome.rounds} rounds.` : `no full agreement after ${outcome.rounds} rounds (${Object.entries(outcome.counts).map(([v, n]) => `${n} ${v}`).join(', ')}).`}`;
+Outcome: ${outcome.agreed
+    ? `the council agreed on "${outcome.leading}" after ${outcome.rounds} rounds. Your ruling is "${outcome.leading}": never overrule the council.`
+    : `no full agreement after ${outcome.rounds} rounds (${Object.entries(outcome.counts).map(([v, n]) => `${n} ${v}`).join(', ')}). Rule with the majority, "${outcome.leading}", and name who dissents and why.`}`;
 
 // MARK: Brainstorm
 
 export function panelSystem(panelist, members, { summary, frontier }) {
   const others = PANELISTS.filter((x) => members.includes(x.id) && x.id !== panelist.id).map((x) => x.name).join(', ');
-  let s = `You are the ${panelist.name} on SooFrontier's Brainstorm panel, a live discussion between an AI researcher ("You" in the transcript) and a panel of agents: ${others}. ${panelist.viewpoint}`;
+  let s = `You are the ${panelist.name} on SooFrontier's Brainstorm panel, a live discussion between an AI researcher ("You" in the transcript) and a panel of agents: ${others}. ${panelist.viewpoint}\n${currentContext().replace('The item is real', 'Items from the frontier are real')}`;
   if (summary) {
     s += `\nThe discussion is ending. Summarise it for the researcher.\n${STRUCTURE}\nTL;DR: where the discussion landed, in 2–3 sentences. Takeaways: the strongest points, crediting who made them. Potential opportunities: concrete next steps or ideas to pursue. Under 300 words.`;
   } else {

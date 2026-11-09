@@ -13,12 +13,20 @@ For people who work on AI: papers, tech reports, demos, code, models, products, 
 
 ## Demos
 
+### The whole loop in two and a half minutes
+
+[<img src="docs/media/soofrontier-demo.gif" alt="SooFrontier web demo: the Brief, a paper, a live Frontier Council debate on local models, local-model settings, a Brainstorm chat, a video meeting and Voices on X" width="720">](design/demo/soofrontier-demo.mp4)
+
+Recorded in the web version on a Lenovo ThinkStation PGX (NVIDIA GB10). The Council debate and Brainstorm replies run live on Qwen3.6 35B-A3B and LFM3 1.7B and are sped up here. In the video meeting, panelists answer aloud with lip-synced faces; for this recording their voices come from Piper, a local neural TTS, standing in for the device voices the app uses. Click for the full video with sound.
+
+### On the phone
+
 Recorded on iPhone, except Live discussion, on a Pixel. Click a preview to watch the full video; the longer ones are sped up here.
 
 | Brief | Research | Opinions | Video meeting | Live discussion |
 | :---: | :---: | :---: | :---: | :---: |
 | [<img src="docs/media/brief.gif" alt="Scrolling the morning Brief" width="200">](design/demo/brief.mp4) | [<img src="docs/media/research.gif" alt="Opening a paper and reading its structured summary" width="200">](design/demo/research.mp4) | [<img src="docs/media/opinions.gif" alt="Voices on X, then company blogs" width="200">](design/demo/opinions.mp4) | [<img src="docs/media/meeting.gif" alt="A Brainstorm video meeting: the Skeptic answers while the Builder waits" width="200">](design/demo/meeting.mp4) | [<img src="docs/media/live-discussion.gif" alt="A topic is set and the Skeptic's reply streams in" width="200">](web/README.md#live-discussion) |
-| The day's read, written by the Council | From a paper list to a structured read | What the people you follow are saying | Panelists speak their answers | Agents debate a topic on local models |
+| The day's read, written by the Synthesizer | From a paper list to a structured read | What the people you follow are saying | Panelists speak their answers | Agents debate a topic on local models |
 
 ## How it works
 
@@ -30,15 +38,14 @@ flowchart LR
     S3[Lab and company blogs]
     S4[Product and service news]
     S5[Essays]
-    S6[X, via Grok search]
+    S6[Posts on X, via Grok search]
   end
-  subgraph Harvesters["Nine harvesters"]
+  subgraph Harvesters["Nine harvesters · 6:00 am daily"]
     H[Archivist · Librarian · Showrunner<br>Scout · Curator · Analyst<br>Pundit · Correspondent · Listener]
   end
-  subgraph Thinkers
-    K[Skeptic<br>rates signal and hype]
-    Y[Synthesizer<br>desk digests]
-    C[Council<br>morning Brief]
+  subgraph Writers["Daily writing"]
+    K[Skeptic<br>scores signal and hype]
+    Y[Synthesizer<br>Brief and desk digests]
   end
   subgraph Desks
     D1[Brief]
@@ -47,11 +54,38 @@ flowchart LR
     D4[Opinions]
     D5[Brainstorm]
   end
+  subgraph Local["Local models on your GPU · Ollama on a GB10"]
+    C[Frontier Council<br>5 members debate<br>until they agree]
+    B[Brainstorm<br>group chat · video meeting<br>Live discussion]
+  end
   Sources --> H --> K --> Y --> Desks
-  K --> C --> D1
+  Desks -- any story --> C
+  C -- verdict --> B
+  D5 --> B
 ```
 
-Every morning at 6:00 am Pacific the harvesters run in parallel and publish as they finish. The Skeptic dedupes and scores each story, then the Synthesizer and the Council write on top of the harvest.
+Every morning at 6:00 am Pacific the harvesters run in parallel and publish as they finish. The Skeptic dedupes and scores each story, and the Synthesizer writes the Brief and each desk's digest. On any story, the Frontier Council deep-dives and argues to a verdict, and Brainstorm takes you past it. Both run only on local models.
+
+### The Frontier Council
+
+```mermaid
+flowchart LR
+  O["Round 1<br>opening statements<br>each ends with a verdict"] --> R["Rebuttal round<br>answer others by name,<br>concede or hold"]
+  R --> A{"All verdicts equal?"}
+  A -- yes --> M["Moderator ruling<br>how they agreed"]
+  A -- "no, under 4 rounds" --> R
+  A -- "no, 4 rounds" --> D["Moderator ruling<br>majority and dissent"]
+```
+
+| Seat | Perspective | Default model |
+| --- | --- | --- |
+| Skeptic | Missing baselines, eval leakage, cherry-picked results | Main local model |
+| Builder | What it enables today, cost to run and ship | Main local model |
+| Contrarian | Who benefits from the hype, what everyone misses | Main local model |
+| Open-Weights Advocate | Can you reproduce, run and fine-tune it yourself | Main local model |
+| Edge Engineer | Phones, laptops and edge chips: memory and latency | LiquidAI LFM3-1.7B |
+
+Verdicts are read, try, wait or skip. The debate stops once every member holds the same verdict, after at least one rebuttal round, so an easy consensus is still challenged.
 
 ## What it does
 
