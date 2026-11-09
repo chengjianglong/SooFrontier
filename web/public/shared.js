@@ -88,6 +88,10 @@ export function parseVerdict(text) {
     .replace(new RegExp(`^\\s*(?:#{1,6}\\s*|\\*\\*)(?:the )?(?:${seatNames})(?:\\*\\*)?:?\\s*$`, 'im'), '')
     .replace(/^\s*#{1,6}[^\n]*\n/, '')
     .replace(/\n{3,}/g, '\n\n');
+  // No verdict line? It may be tacked onto the end of the last paragraph ("…until then. Verdict: wait").
+  const tail = /[\s*_]*verdict[\s*_]*[:\-–][\s*_]*(read|try|wait|skip)\b[*_.!]*\s*$/i;
+  const t = verdict ? null : cleaned.match(tail);
+  if (t) return { verdict: t[1].toLowerCase(), text: cleaned.replace(tail, '').trim() };
   return { verdict, text: cleaned.trim() };
 }
 
