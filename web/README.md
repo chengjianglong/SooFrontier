@@ -49,7 +49,6 @@ This serves plain HTTP, so only use it on a network you trust. Browsers also tur
 - **Refresh:** the 6:00 am Pacific refresh runs on the server, so it happens only while the server is running. It catches up as soon as it next runs or the computer wakes.
 - **Mac bridge:** native only. Here, models run where the server runs, or on your local model server.
 - **Local models:** point Settings → Local models at an Ollama server (default `http://localhost:11434`, or set `SOOFRONTIER_LOCAL_URL`). The Council and Brainstorm run only on it.
-- **Live discussion:** browser only. The native apps have Group chat and Video meeting but no Live discussion.
 - **Listening:** read-aloud uses the browser's voices. It has no lock-screen controls, and may stop when a phone browser goes to the background.
 - **Voice input:** needs Chrome or Safari. Other browsers can still type.
 - **Video meeting:** uses the native app's stage, read from `../SooFrontier/Resources`, so keep the `web` folder next to it.
