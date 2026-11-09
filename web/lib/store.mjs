@@ -3,9 +3,9 @@ import { EventEmitter } from 'node:events';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { AGENTS, CATEGORIES, PANELISTS, PROVIDERS, SECTIONS, VOICE_STARTERS, assess, futureWork, itemsIn, keyPoints, parseQuickRead, quickTLDR, topSignals } from '../public/shared.js';
+import { AGENTS, CATEGORIES, COUNCIL_DEFAULT_MODELS, COUNCIL_MAX_ROUNDS, COUNCIL_SEATS, PANELISTS, PROVIDERS, SECTIONS, parseVerdict, providerInfo, tallyVerdicts, VOICE_STARTERS, assess, futureWork, itemsIn, keyPoints, parseQuickRead, quickTLDR, topSignals } from '../public/shared.js';
 import { HARVESTERS } from './harvest.mjs';
-import { cliPath, makeClient } from './llm.mjs';
+import { LOCAL, cliPath, localModels, makeClient, makeLocalClient, withFallback } from './llm.mjs';
 import { arxivID, keyFigures, readPaper } from './net.mjs';
 import * as P from './prompts.mjs';
 
@@ -72,6 +72,8 @@ export class FrontierStore extends EventEmitter {
   isRefreshing = false;
   digestsInProgress = new Set();
   #quickInFlight = new Map();
+  /** Models on the local server, refreshed every minute; null when it can't be reached. */
+  localInstalled = null;
   #papers = new Map();
 
   constructor() {
@@ -81,6 +83,8 @@ export class FrontierStore extends EventEmitter {
       keys: s.keys ?? {}, models: s.models ?? {}, modes: s.modes ?? {}, cliModels: s.cliModels ?? {},
       synthesizerProvider: s.synthesizerProvider ?? 'anthropic', skepticProvider: s.skepticProvider ?? 'openai',
       agentsOff: s.agentsOff ?? [], saved: s.saved ?? [], voices: s.voices ?? VOICE_STARTERS,
+      local: { url: LOCAL.defaultURL, model: LOCAL.defaultModel, fastModel: LOCAL.defaultFastModel, prefer: false, ...s.local,
+        councilModels: { ...COUNCIL_DEFAULT_MODELS, ...s.local?.councilModels } },
     };
     const c = loadJSON('cache.json', {});
     this.items = c.items ?? [];
@@ -105,9 +109,40 @@ export class FrontierStore extends EventEmitter {
 
   configuredProviders = () => PROVIDER_IDS.filter((p) => this.client(p));
 
-  /** Preferred provider for a role, falling back to any configured one. */
-  roleClient(preferred) {
-    return this.client(preferred) ?? this.configuredProviders().map((p) => this.client(p))[0] ?? null;
+  /** The local model server, when it's reachable and has the chosen model. */
+  localClient({ fast = false } = {}) {
+    const l = this.settings.local;
+    if (!l.url || !this.localInstalled?.includes(l.model)) return null;
+    const fastModel = this.localInstalled.includes(l.fastModel) ? l.fastModel : l.model;
+    const c = makeLocalClient({ url: l.url, model: l.model, fastModel });
+    return fast ? c.withModel() : c;
+  }
+
+  /** The local client for a council seat: its own model when that's downloaded, otherwise the main model. */
+  seatClient(seatId) {
+    const main = this.localClient();
+    const own = this.settings.local.councilModels?.[seatId];
+    if (!main || !own || own === main.model || !this.localInstalled?.includes(own)) return main;
+    return makeLocalClient({ url: this.settings.local.url, model: own });
+  }
+
+  async refreshLocal() {
+    const before = JSON.stringify(this.localInstalled);
+    this.localInstalled = this.settings.local.url ? await localModels(this.settings.local.url) : null;
+    if (JSON.stringify(this.localInstalled) !== before) this.#changed();
+  }
+
+  /**
+   * Preferred provider for a role, falling back to any configured one. The local server answers first when
+   * "Prefer local models" is on, and otherwise steps in when the provider can't be reached.
+   * `fast` picks each side's quick model (Claude Haiku, the local fast model).
+   */
+  roleClient(preferred, { fast = false } = {}) {
+    let remote = this.client(preferred) ?? this.configuredProviders().map((p) => this.client(p))[0] ?? null;
+    if (fast && remote?.provider === 'anthropic') remote = remote.withModel('haiku', 'claude-haiku-5-5');
+    const local = this.localClient({ fast });
+    if (!remote || !local) return remote ?? local;
+    return this.settings.local.prefer ? withFallback(local, remote) : withFallback(remote, local);
   }
 
   /** What the browser may see. API keys never leave the server. */
@@ -121,6 +156,7 @@ export class FrontierStore extends EventEmitter {
         mode: this.mode(p), model: this.model(p), cliModel: this.cliModel(p), hasKey: Boolean(s.keys[p]),
         cliPath: cliPath(PROVIDERS[p].cliName), configured: Boolean(this.client(p)),
       }])),
+      local: { ...s.local, installed: this.localInstalled ?? [], reachable: this.localInstalled !== null, configured: Boolean(this.localClient()) },
     };
   }
 
@@ -152,6 +188,21 @@ export class FrontierStore extends EventEmitter {
       if (typeof c.cliModel === 'string' && PROVIDERS[p].cliModels.includes(c.cliModel)) s.cliModels[p] = c.cliModel;
       if (typeof c.key === 'string') s.keys[p] = c.key.trim();
     }
+    const l = patch.local;
+    let localChanged = false;
+    if (l && typeof l === 'object') {
+      if (typeof l.url === 'string') { s.local.url = l.url.trim().replace(/\/+$/, ''); localChanged = true; }
+      for (const k of ['model', 'fastModel']) if (typeof l[k] === 'string' && l[k].trim()) s.local[k] = l[k].trim();
+      if (typeof l.prefer === 'boolean') s.local.prefer = l.prefer;
+      if (l.councilModels && typeof l.councilModels === 'object') {
+        for (const seat of COUNCIL_SEATS) {
+          const m = l.councilModels[seat.id];
+          if (m === '') delete s.local.councilModels[seat.id];
+          else if (typeof m === 'string' && m.trim()) s.local.councilModels[seat.id] = m.trim();
+        }
+      }
+    }
+    if (localChanged) this.refreshLocal();
     if (PROVIDER_IDS.includes(patch.synthesizerProvider)) s.synthesizerProvider = patch.synthesizerProvider;
     if (PROVIDER_IDS.includes(patch.skepticProvider)) s.skepticProvider = patch.skepticProvider;
     if (Array.isArray(patch.agentsOff)) s.agentsOff = patch.agentsOff.filter((a) => AGENTS[a]);
@@ -250,7 +301,7 @@ export class FrontierStore extends EventEmitter {
       this.saveCache();
       return;
     }
-    this.#setStatus('synthesizer', 'working', `Drafting the brief with ${PROVIDERS[llm.provider].family}…`);
+    this.#setStatus('synthesizer', 'working', `Drafting the brief with ${providerInfo(llm.provider).family}…`);
     // Give the synthesizer a balanced slate: the top items from every lane.
     const slate = Object.keys(CATEGORIES).flatMap((c) => itemsIn(this.items, c).slice(0, 3));
     try {
@@ -318,10 +369,9 @@ export class FrontierStore extends EventEmitter {
   }
 
   async #writeQuickRead(item) {
-    // Prefer Claude Haiku on the plan for speed; otherwise whichever model writes analyses.
-    let llm = this.client('anthropic') ?? this.roleClient(this.settings.skepticProvider);
+    // Prefer Claude Haiku (or the local fast model) for speed; otherwise whichever model writes analyses.
+    const llm = this.roleClient(this.client('anthropic') ? 'anthropic' : this.settings.skepticProvider, { fast: true });
     if (!llm) return null;
-    if (llm.provider === 'anthropic') llm = llm.withModel('haiku', 'claude-haiku-5-5');
     const paper = await this.paper(item);
     let prompt = P.itemPrompt(item);
     const points = keyPoints(item.summary, paper?.text, quickTLDR(item));
@@ -338,50 +388,65 @@ export class FrontierStore extends EventEmitter {
     } catch { return null; }
   }
 
-  /** Full analysis, written from the paper's full text and figure captions when the page can be read. */
-  async critique(item, signal) {
-    const llm = this.roleClient(this.settings.skepticProvider);
-    if (!llm) throw new Error('Add a model provider key in Settings.');
-    const paper = await this.paper(item);
-    let prompt = P.itemPrompt(item);
-    if (paper) {
-      const figures = paper.figures.slice(0, 12).map((f) => `- ${f.caption}`).join('\n');
-      if (figures) prompt += `\n\nFigures (captions):\n${figures}`;
-      prompt += `\n\nFull text:\n${paper.text}`;
-    }
-    return { text: await llm.complete({ system: P.CRITIQUE_SYSTEM, prompt, signal }), by: llm.label };
-  }
-
-  /** Convenes every configured provider in parallel, then has the moderator rule. */
+  /**
+   * The Frontier Council, on the local models only (no plan or API cost). The members give opening statements,
+   * then debate in rebuttal rounds, each speaking in turn and answering the others, until they all hold the same
+   * verdict (after at least one rebuttal) or COUNCIL_MAX_ROUNDS is reached. The moderator then rules.
+   * Events: {round}, {speaking}, {turn}, {outcome}, {ruling}.
+   */
   async convene(item, onEvent, signal) {
-    const panel = this.configuredProviders().map((p) => this.client(p));
-    if (!panel.length) throw new Error('Add at least one provider key in Settings.');
-    const prompt = P.itemPrompt(item);
-    const turns = await Promise.all(panel.map(async (llm) => {
-      let turn;
-      try {
-        turn = { provider: llm.provider, text: await llm.complete({ system: P.seatSystem(llm.provider), prompt, maxTokens: 4000, signal }) };
-      } catch (e) {
-        turn = { provider: llm.provider, text: e.message, failed: true };
+    const llm = this.localClient();
+    if (!llm) throw new Error('The Council runs on your local models. Set up Local models in Settings (and download the main model).');
+    const turns = [];
+    let outcome = null;
+    for (let round = 1; round <= COUNCIL_MAX_ROUNDS; round++) {
+      onEvent({ round });
+      const before = [...turns];
+      const thisRound = [];
+      for (const seat of COUNCIL_SEATS) {
+        if (signal?.aborted) throw new Error('Cancelled');
+        onEvent({ speaking: { seat: seat.id, round } });
+        // Opening statements are independent; in rebuttals each member hears everything said so far, this round included.
+        const heard = round === 1 ? before : turns;
+        const voice = this.seatClient(seat.id);
+        let turn;
+        try {
+          const raw = await voice.complete({ system: P.councilSeatSystem(seat, round), prompt: P.councilTurnPrompt(item, heard), maxTokens: 1500, temperature: 0.8, signal });
+          turn = { seat: seat.id, round, model: voice.model, ...parseVerdict(raw) };
+          // No verdict line means no change of mind: keep the member's last verdict.
+          if (!turn.verdict) {
+            const last = turns.findLast((t) => t.seat === seat.id && t.verdict);
+            if (last) Object.assign(turn, { verdict: last.verdict, kept: true });
+          }
+        } catch (e) {
+          if (signal?.aborted) throw e;
+          turn = { seat: seat.id, round, model: voice.model, text: e.message, verdict: null, failed: true };
+        }
+        turns.push(turn);
+        thisRound.push(turn);
+        onEvent({ turn });
       }
-      onEvent({ turn });
-      return turn;
-    }));
-    const good = turns.filter((t) => !t.failed);
-    const moderator = this.roleClient(this.settings.synthesizerProvider);
-    if (!moderator || !good.length) return;
-    const transcript = good.map((t) => `### ${PROVIDERS[t.provider].seat.title} (${PROVIDERS[t.provider].family})\n${t.text}`).join('\n\n');
-    onEvent({ ruling: await moderator.complete({ system: P.MODERATOR_SYSTEM, prompt: `${prompt}\n\nPanel:\n\n${transcript}`, maxTokens: 4000, signal }) });
+      const spoke = thisRound.filter((t) => !t.failed);
+      if (!spoke.length) throw new Error(`No council member could answer: ${thisRound[0]?.text ?? 'unknown error'}`);
+      outcome = { ...tallyVerdicts(spoke), rounds: round };
+      if (outcome.agreed && round >= 2) break;
+    }
+    onEvent({ outcome });
+    const ruling = await llm.complete({ system: P.MODERATOR_SYSTEM, prompt: P.moderatorPrompt(item, turns, outcome), maxTokens: 4000, signal });
+    onEvent({ ruling, by: llm.label });
   }
 
   // MARK: Brainstorm
 
-  /** One panelist's turn. The browser owns the room and asks for one reply at a time. */
+  /**
+   * One panelist's turn, always on the local main model (no plan or API cost, and no fallback to a provider).
+   * The browser owns the room and asks for one reply at a time.
+   */
   async panelTurn({ panelistId, members, messages, optional, summary, useFrontier }, signal) {
     const panelist = PANELISTS.find((p) => p.id === panelistId);
     if (!panelist) throw new Error('Unknown panelist');
-    const llm = this.client(panelist.provider) ?? this.roleClient(panelist.provider);
-    if (!llm) throw new Error('Connect a model in Settings to brainstorm.');
+    const llm = this.localClient();
+    if (!llm) throw new Error('Brainstorm runs on your local models. Set up Local models in Settings (and download the main model).');
     const text = await llm.complete({
       system: P.panelSystem(panelist, members, { summary, frontier: useFrontier ? topSignals(this.items) : null }),
       prompt: P.panelPrompt(panelist, messages, { optional, summary }),
@@ -391,7 +456,10 @@ export class FrontierStore extends EventEmitter {
   }
 
   async testProvider(p) {
-    const llm = this.client(p);
+    if (p === 'local') await this.refreshLocal();
+    const llm = p === 'local' ? this.localClient() : this.client(p);
+    const l = this.settings.local;
+    if (!llm && p === 'local') throw new Error(this.localInstalled ? `${l.model} isn't on the server yet. Run “ollama pull ${l.model}” there.` : `Can't reach ${l.url || 'a local server'}.`);
     if (!llm) throw new Error('Not set up yet.');
     return llm.complete({ system: 'Reply with exactly: ready', prompt: 'Status check.', maxTokens: 300 });
   }
@@ -399,7 +467,8 @@ export class FrontierStore extends EventEmitter {
   /** Refreshes at 6:00 am Pacific, and on start or after sleep if that run was missed. */
   startSchedule() {
     const check = () => { if (this.isDue()) this.refresh(); };
-    if (!this.items.length) this.refresh(); else check();
+    this.refreshLocal().then(() => { if (!this.items.length) this.refresh(); else check(); });
+    setInterval(() => this.refreshLocal(), 60_000).unref?.();
     setInterval(check, 60_000).unref?.();
   }
 }

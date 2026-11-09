@@ -14,20 +14,24 @@ struct AgentsView: View {
                 row(.skeptic, model: store.roleClient(store.skepticProvider)?.label)
                 row(.synthesizer, model: store.roleClient(store.synthesizerProvider)?.label)
             }
-            Section("Frontier Council") {
-                ForEach(Provider.allCases) { p in
+            Section {
+                ForEach(CouncilAgent.seats) { seat in
                     HStack {
-                        Image(systemName: p.symbol).foregroundStyle(p.color).frame(width: 28)
+                        Image(systemName: seat.symbol).foregroundStyle(.tint).frame(width: 28)
                         VStack(alignment: .leading) {
-                            Text("\(p.councilSeat.title) · \(p.family)").font(.body.weight(.medium))
-                            Text(p.councilSeat.brief).font(.caption).foregroundStyle(.secondary)
+                            Text(seat.title).font(.body.weight(.medium))
+                            Text(seat.brief).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(store.client(p) == nil ? "Not set up" : "Seated")
+                        Text(store.local.isConfigured ? "Seated" : "Not set up")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(store.client(p) == nil ? Color.secondary : Color.green)
+                            .foregroundStyle(store.local.isConfigured ? Color.green : Color.secondary)
                     }
                 }
+            } header: {
+                Text("Frontier Council")
+            } footer: {
+                Text("Every member runs on your local models (\(store.local.model)), so a session costs no plan usage or API fees. They debate in rounds until they agree, up to \(CouncilAgent.maxRounds) rounds, then the moderator rules.")
             }
         }
         .navigationTitle("Agent crew")
@@ -86,14 +90,14 @@ struct SettingsView: View {
             }
             AppearanceSection()
             BridgeSection()
-            GemmaSection()
+            LocalModelSection()
             ForEach(Provider.allCases) { p in ProviderSection(provider: p) }
             Section("Roles") {
                 Picker("Synthesizer & moderator", selection: Binding(get: { store.synthesizerProvider },
                                                                      set: { store.setRoles(synth: $0, skeptic: store.skepticProvider) })) {
                     ForEach(Provider.allCases) { Text($0.family).tag($0) }
                 }
-                Picker("Story analysis (Analyze)", selection: Binding(get: { store.skepticProvider },
+                Picker("Quick reads", selection: Binding(get: { store.skepticProvider },
                                                                    set: { store.setRoles(synth: store.synthesizerProvider, skeptic: $0) })) {
                     ForEach(Provider.allCases) { Text($0.family).tag($0) }
                 }
@@ -319,40 +323,65 @@ struct VoicesView: View {
     }
 }
 
-/// Download or remove on-device Gemma, the offline fallback writer.
-private struct GemmaSection: View {
+/// The open-weight model server on your GPU box (Ollama on a GB10 / DGX Spark), reached over your network or VPN.
+private struct LocalModelSection: View {
     @Environment(FrontierStore.self) private var store
+    @State private var installed: [String] = []
     @State private var testing = false
     @State private var testResult: String?
 
     var body: some View {
-        let model = store.gemma
+        @Bindable var store = store
         Section {
-            switch model.state {
-            case .notDownloaded:
-                Button { model.download() } label: { Label("Download Gemma 4 (2.6 GB)", systemImage: "arrow.down.circle") }
-            case .downloading(let p):
-                VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: p) { Text("Downloading Gemma 4… \(Int(p * 100))%") }
-                    Button("Cancel", role: .cancel) { model.cancel() }.buttonStyle(.borderless)
+            TextField("http://192.168.1.20:11434", text: $store.local.url)
+                .textContentType(.URL)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                #endif
+                .onSubmit { Task { await refresh() } }
+            modelPicker("Main model", selection: $store.local.model)
+            modelPicker("Fast model", selection: $store.local.fastModel)
+            DisclosureGroup("Council seats") {
+                ForEach(CouncilAgent.seats) { seat in
+                    Picker(seat.title.replacingOccurrences(of: "The ", with: ""), selection: Binding(
+                        get: { store.local.councilModels[seat.id] ?? "" },
+                        set: { store.local.councilModels[seat.id] = $0.isEmpty ? nil : $0 })) {
+                        Text("Main model").tag("")
+                        ForEach(modelOptions(store.local.councilModels[seat.id] ?? store.local.model), id: \.self) { m in
+                            Text(installed.isEmpty || installed.contains(m) ? m : "\(m) (not downloaded)").tag(m)
+                        }
+                    }
                 }
-            case .ready:
-                LabeledContent("Gemma 4 E2B") {
-                    Label("On this device", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                }
-                Button(testing ? "Testing…" : "Test offline model") { Task { await test() } }.disabled(testing)
-                if let testResult { Text(testResult).font(.caption).foregroundStyle(.secondary) }
-                Button("Remove model", role: .destructive) { model.delete() }
-            case .failed(let message):
-                Text(message).font(.caption).foregroundStyle(.red)
-                Button("Try again") { model.download() }
             }
+            Toggle("Prefer local models", isOn: $store.local.prefer)
+            Button(testing ? "Testing…" : "Test local server") { Task { await test() } }
+                .disabled(testing || !store.local.isConfigured)
+            if let testResult { Text(testResult).font(.caption).foregroundStyle(.secondary) }
         } header: {
-            Label("Offline · on-device Gemma", systemImage: "cpu")
+            Label("Local models · your GPU box", systemImage: "cpu")
         } footer: {
-            Text("When you're offline or your Mac bridge can't be reached, Gemma 4 runs on this device to write briefs, analyses, and quick reads. Answers are shorter and less detailed than Claude, GPT, or Grok, and they're marked \"Gemma 4 · on device\". Download over Wi-Fi; it needs about 3.5 GB free.")
+            Text("An Ollama server on your own machine, such as a DGX Spark / GB10. Use its LAN address, its .local name, or its address on your VPN (Tailscale, WireGuard). The main model writes briefs and digests and runs the Frontier Council and Brainstorm, at no plan or API cost (a Council seat can have its own model, like LFM3 for the Edge Engineer); the fast model writes quick reads. It answers whenever Claude, GPT or Grok can't be reached, or for everything when \"Prefer local models\" is on. Live X and web research always uses Grok.")
         }
-        .onAppear { model.refresh() }
+        .task(id: store.local.url) { await refresh() }
+    }
+
+    private func modelOptions(_ current: String) -> [String] {
+        Array(Set(installed + LocalModels.suggestedModels + [current])).sorted()
+    }
+
+    private func modelPicker(_ title: String, selection: Binding<String>) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(modelOptions(selection.wrappedValue), id: \.self) { m in
+                Text(installed.isEmpty || installed.contains(m) ? m : "\(m) (not downloaded)").tag(m)
+            }
+        }
+    }
+
+    private func refresh() async {
+        guard store.local.isConfigured else { installed = []; return }
+        installed = (try? await LocalModels.installed(at: store.local.url)) ?? []
     }
 
     private func test() async {
@@ -360,8 +389,9 @@ private struct GemmaSection: View {
         defer { testing = false }
         let t0 = Date()
         do {
-            let r = try await OnDeviceGemma.shared.complete(system: "Reply with exactly one word: ready", prompt: "Status check.")
-            testResult = "✓ \(r.prefix(30)) (\(Int(Date().timeIntervalSince(t0)))s)"
+            await refresh()
+            let r = try await LocalModels.complete(system: "Reply with exactly one word: ready", prompt: "Status check.", maxTokens: 400)
+            testResult = "✓ \(r.label): \(r.text.prefix(30)) (\(Int(Date().timeIntervalSince(t0)))s)"
         } catch { testResult = "✗ \(error.localizedDescription)" }
     }
 }

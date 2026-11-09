@@ -1,5 +1,5 @@
 // Everything the agents are told. Ported from Agents/Thinkers.swift, Models/FrontierModels.swift and Brainstorm/BrainstormRoom.swift.
-import { CATEGORIES, PANELISTS, PROVIDERS, verdict } from '../public/shared.js';
+import { CATEGORIES, COUNCIL_SEATS, PANELISTS, verdict } from '../public/shared.js';
 
 const ELABORATION = 'Each takeaway is a bold one-line claim followed by 2–4 sentences that elaborate it with specifics: the mechanism, the numbers or evidence, how it compares with prior work, and why it matters to a researcher or builder. Each potential opportunity names a concrete improvement or extension and explains in 1–2 sentences how to pursue it and why it is promising.';
 
@@ -9,15 +9,6 @@ const STRUCTURE = `Write in Markdown using exactly these three headings, in this
 ## Potential opportunities
 TL;DR is plain prose. Takeaways and Potential opportunities are bullet lists starting with "- ". No preamble or sign-off.
 ${ELABORATION}`;
-
-const DETAILED_STRUCTURE = `Write in Markdown using exactly these four headings, in this order, and no others:
-## TL;DR
-## Takeaways
-## Mathematical analysis
-## Potential opportunities
-TL;DR is plain prose. Takeaways and Potential opportunities are bullet lists starting with "- ". No preamble or sign-off.
-${ELABORATION}
-Mathematical analysis is short paragraphs and bullets. Write math in Unicode, never LaTeX: use symbols such as Σ ∇ ∂ ‖·‖ ≈ ≤ ∈ θ λ, superscripts like x², and subscripts like x₀. Put each display equation on its own line, wrapped in single backticks, for example \`L(θ) = E[‖x − f_θ(z)‖²]\`.`;
 
 const DIGEST_FOCUS = {
   research: `You edit SooFrontier's Research desk. From these papers, technical reports, demos, and code, write a digest for AI researchers.
@@ -59,14 +50,6 @@ Use exactly these five Markdown headings, each followed only by bullets starting
 3–4 bullets. Each Contribution, Finding, Result, and Limitation bullet is 1–2 full sentences. Each opportunity is a bold one-line idea followed by 1–2 sentences.
 Every idea must be specific to THIS item: name its actual method, components, datasets, benchmarks, numbers, or the limitation it leaves, and say concretely what to build, test, or extend and how. Never give advice that would fit any other paper or product. Use only facts stated in the item; when the source says little (for example a model card with only a name and tags), do not assume its modality, size, or capabilities, and frame ideas around finding those out. No preamble or sign-off; nothing but the five headings and their bullets.`;
 
-export const CRITIQUE_SYSTEM = `You are the Analyst inside SooFrontier, an app for AI researchers. Write a detailed, technically rigorous analysis of one item.
-${DETAILED_STRUCTURE}
-TL;DR: 3–4 sentences: what the item claims; the key technical details (method or architecture, data, scale, and the headline numbers or benchmarks when given); and your verdict (Strong signal, Promising, Unverified, or Hype).
-Takeaways: when the full text is provided, summarize the main takeaways the way an expert reader would after reading the whole paper: 6–8 bullets, each a bold one-line claim followed by a full paragraph (4–6 sentences). Cover, in order: the problem and why prior approaches fall short; the method or framework and its main components, walking through the pipeline step by step and citing the figure that shows it (for example "Figure 2 shows…"); the data and training setup; the main results with exact numbers and baselines; what the ablations reveal; and the limitations or red flags. Without the full text, give 4–6 elaborated bullets on the evidence, what is new, and any red flags.
-Mathematical analysis: formalize the core idea. Give the objective or loss and the key equations, define every symbol, state the assumptions, and reason about complexity, scaling, or convergence. Sanity-check any reported numbers (for example whether a claimed speedup or accuracy gain is plausible). If the source gives too little to formalize, write the most likely formulation and say clearly that it is your reconstruction.
-Potential opportunities: 3–5 bullets on concrete improvements or extensions that build on this work: follow-up experiments, better methods, new applications, or products and research directions it enables.
-Be specific. If you only have the abstract or blurb, say what you cannot judge from it.`;
-
 export const itemPrompt = (item) => `Item type: ${CATEGORIES[item.category].title}
 Title: ${item.title}
 Source: ${item.source}${item.author ? ` · by ${item.author}` : ''}
@@ -103,16 +86,45 @@ export function offlineBrief(tops) {
   return `## TL;DR\nToday's top signals across ${tops.length} lanes, ranked by freshness, traction, and the Skeptic's checks. Connect Claude, GPT, or Grok in Settings for a full analytical brief.\n\n## Takeaways\n${lines}\n\n## Potential opportunities\n${ideas}`;
 }
 
-export const seatSystem = (provider) => `You sit on SooFrontier's Frontier Council as ${PROVIDERS[provider].seat.title}. ${PROVIDERS[provider].seat.brief}
-React to the item in at most 140 words of Markdown: open with a bold one-line take, then 2–3 bullets.
-Be concrete and opinionated, and never generic.`;
+const VERDICT_RULE = `End with one final line exactly in this form: "Verdict: read", "Verdict: try", "Verdict: wait" or "Verdict: skip" (read = worth studying closely, try = worth running or building with now, wait = promising but not ready, skip = not worth the time).`;
 
-export const MODERATOR_SYSTEM = `You moderate SooFrontier's Frontier Council. Given an item and each panelist's take, rule on it.
+export function councilSeatSystem(seat, round) {
+  const others = COUNCIL_SEATS.filter((s) => s.id !== seat.id).map((s) => s.title).join(', ');
+  const task = round === 1
+    ? 'Give your opening statement on the item in at most 120 words of Markdown: a bold one-line take, then 2–3 bullets. Argue strictly from your own perspective.'
+    : `This is rebuttal round ${round}. In at most 110 words, respond to the other members by name: concede any point that is right, push back where you still disagree, and give the evidence or test that would change your mind. Do not repeat your earlier points. Change your verdict only if the arguments actually convinced you, and say so. The council is trying to reach an agreement it can stand behind, not a polite one.`;
+  return `You sit on SooFrontier's Frontier Council as ${seat.title}. ${seat.brief}
+The other members are ${others}. Be concrete, technical and opinionated, never generic. Write in English, even if the item is in another language. Speak only as yourself, in the first person: never write lines for other members, and don't copy their wording. Don't start with a heading or your own name.
+${task}
+${VERDICT_RULE}`;
+}
+
+export function councilTranscript(turns) {
+  let out = '';
+  let round = 0;
+  for (const t of turns.filter((x) => !x.failed)) {
+    if (t.round !== round) { round = t.round; out += `\n## Round ${round}${round === 1 ? ': opening statements' : ': rebuttals'}\n`; }
+    out += `\n### ${COUNCIL_SEATS.find((s) => s.id === t.seat).title}\n${t.text}\nVerdict: ${t.verdict ?? 'none given'}\n`;
+  }
+  return out.trim();
+}
+
+export const councilTurnPrompt = (item, turns) => turns.length
+  ? `${itemPrompt(item)}\n\nThe debate so far:\n\n${councilTranscript(turns)}`
+  : itemPrompt(item);
+
+export const MODERATOR_SYSTEM = `You moderate SooFrontier's Frontier Council, where its members debated an item over several rounds. Rule on it. Write in English.
 ${STRUCTURE}
-TL;DR: your ruling in 2–3 sentences, telling a researcher whether to read, try, wait, or skip, and the technical reason why.
-Takeaways: 2–4 bullets on where the panel agrees, naming panelists.
-Potential opportunities: 1–3 bullets on how the work could be improved or extended, including the experiment that would settle the panel's disagreement.
-Under 170 words.`;
+TL;DR: your ruling in 2–3 sentences, telling a researcher whether to read, try, wait, or skip, and the technical reason why. If the council agreed, say how it got there; if not, rule anyway and name who dissents and why.
+Takeaways: 2–4 bullets on the arguments that moved the debate, naming members and who changed their mind.
+Potential opportunities: 1–3 bullets on how the work could be improved or extended, including the experiment that would settle any remaining disagreement.
+Under 190 words.`;
+
+export const moderatorPrompt = (item, turns, outcome) => `${itemPrompt(item)}
+
+${councilTranscript(turns)}
+
+Outcome: ${outcome.agreed ? `the council agreed on "${outcome.leading}" after ${outcome.rounds} rounds.` : `no full agreement after ${outcome.rounds} rounds (${Object.entries(outcome.counts).map(([v, n]) => `${n} ${v}`).join(', ')}).`}`;
 
 // MARK: Brainstorm
 

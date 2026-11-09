@@ -41,34 +41,130 @@ export const PROVIDERS = {
     name: 'Anthropic', family: 'Claude', defaultModel: 'claude-opus-5-5', keyHelp: 'console.anthropic.com → API Keys',
     suggestedModels: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
     cliName: 'claude', loginCommand: 'claude', planName: 'Claude Pro/Max', cliModels: ['opus', 'sonnet', 'haiku'], defaultCLIModel: 'opus',
-    seat: { title: 'The Skeptic', brief: 'Rigorous methodologist. Hunt for missing baselines, eval leakage, cherry-picked results, and unstated limitations.' },
   },
   openai: {
     name: 'OpenAI', family: 'GPT', defaultModel: 'gpt-5', keyHelp: 'platform.openai.com → API keys',
     suggestedModels: ['gpt-5', 'gpt-5-mini'],
     cliName: 'codex', loginCommand: 'codex login', planName: 'ChatGPT Plus/Pro', cliModels: ['', 'gpt-6-astra'], defaultCLIModel: '',
-    seat: { title: 'The Builder', brief: "Pragmatic engineer. Judge what this enables today, what it costs to run, and how you'd actually ship with it." },
   },
   xai: {
     name: 'xAI', family: 'Grok', defaultModel: 'grok-4', keyHelp: 'console.x.ai → API Keys',
     suggestedModels: ['grok-4', 'grok-4-fast'],
     cliName: 'grok', loginCommand: 'grok login', planName: 'SuperGrok', cliModels: ['', 'grok-build-0.1'], defaultCLIModel: '',
-    seat: { title: 'The Contrarian', brief: 'Provocative outsider. Challenge the consensus narrative, name who benefits from the hype, and say what everyone is missing.' },
   },
 };
 
+/** The open-weight models on your own GPU box (an Ollama server), shown alongside the three providers. */
+export const LOCAL_PROVIDER = {
+  name: 'Local', family: 'Local',
+};
+/** Display info for a provider id, including 'local'. */
+export const providerInfo = (p) => PROVIDERS[p] ?? LOCAL_PROVIDER;
+
+// MARK: Frontier Council: five perspectives, played by the local models, debating until they agree.
+
+export const COUNCIL_SEATS = [
+  { id: 'skeptic', title: 'The Skeptic', brief: 'Rigorous methodologist. Hunt for missing baselines, eval leakage, cherry-picked results, and unstated limitations.' },
+  { id: 'builder', title: 'The Builder', brief: "Pragmatic engineer. Judge what this enables today, what it costs to run, and how you'd actually ship with it." },
+  { id: 'contrarian', title: 'The Contrarian', brief: 'Provocative outsider. Challenge the consensus narrative, name who benefits from the hype, and say what everyone is missing.' },
+  { id: 'advocate', title: 'The Open-Weights Advocate', brief: 'Hands-on open-model practitioner. Judge whether this can be reproduced, run and fine-tuned on hardware you own, and what the closed labs are not telling you.' },
+  { id: 'edge', title: 'The Edge Engineer', brief: 'On-device and small-model specialist. Judge whether this works on phones, laptops and edge chips, what it costs in memory and latency, and whether a small model could do the job.' },
+];
+/** Seats played by their own local model by default; the rest use the main local model. */
+export const COUNCIL_DEFAULT_MODELS = { edge: 'hf.co/LiquidAI/LFM3-1.7B-GGUF:BF16' };
+/** A model tag short enough for a label: "hf.co/LiquidAI/LFM3-1.7B-GGUF:BF16" → "LFM3-1.7B". */
+export const shortModel = (m) => (m ?? '').split('/').at(-1).replace(/-GGUF(:.*)?$/i, '');
+export const VERDICTS = ['read', 'try', 'wait', 'skip'];
+export const COUNCIL_MAX_ROUNDS = 4;
+
+/** Splits a council turn into its argument and its "Verdict: …" line (models vary the format, so be lenient). */
+export function parseVerdict(text) {
+  const re = /^[\s>#*_-]*(?:my |final |updated |revised )?verdict[\s*_]*[:\-–][\s*_]*(read|try|wait|skip)\b.*$/gim;
+  let verdict = null;
+  for (const m of text.matchAll(re)) verdict = m[1].toLowerCase();
+  const seatNames = COUNCIL_SEATS.map((s) => s.title.replace(/^The /, '')).join('|');
+  const cleaned = text.replace(re, '')
+    .replace(/^[ \t]*#{1,6}[^\n]*verdict[^\n]*$/gim, '')
+    .replace(new RegExp(`^\\s*(?:#{1,6}\\s*|\\*\\*)(?:the )?(?:${seatNames})(?:\\*\\*)?:?\\s*$`, 'im'), '')
+    .replace(/^\s*#{1,6}[^\n]*\n/, '')
+    .replace(/\n{3,}/g, '\n\n');
+  return { verdict, text: cleaned.trim() };
+}
+
+/** Counts verdicts; `agreed` when every member who answered holds the same one. */
+export function tallyVerdicts(turns) {
+  const counts = {};
+  for (const t of turns) if (t.verdict) counts[t.verdict] = (counts[t.verdict] ?? 0) + 1;
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const voters = turns.filter((t) => t.verdict).length;
+  return { counts, leading: ranked[0]?.[0] ?? null, agreed: voters > 1 && ranked.length === 1 && voters === turns.length };
+}
+
 export const PANELISTS = [
-  { id: 'skeptic', name: 'Skeptic', agent: 'skeptic', provider: 'anthropic', aliases: ['claude'],
+  // `voice` matches each portrait: gender picks the voice, and pitch/rate suggest age (speech voices carry no age).
+  { id: 'skeptic', name: 'Skeptic', agent: 'skeptic', provider: 'anthropic', aliases: ['claude'], voice: { gender: 'female', age: 'middle', pitch: 0.97, rate: 1.0 },
     viewpoint: 'A rigorous methodologist. You test claims: missing baselines, weak evidence, hidden assumptions, and what would change your mind.' },
-  { id: 'builder', name: 'Builder', agent: 'analyst', provider: 'openai', aliases: ['gpt', 'chatgpt', 'analyst'],
+  { id: 'builder', name: 'Builder', agent: 'analyst', provider: 'openai', aliases: ['gpt', 'chatgpt', 'analyst'], voice: { gender: 'male', age: 'young', pitch: 1.03, rate: 1.08 },
     viewpoint: 'A pragmatic engineer and product builder. You focus on what this enables today, how you would ship it, what it costs, and concrete next steps.' },
-  { id: 'contrarian', name: 'Contrarian', agent: 'pundit', provider: 'xai', aliases: ['grok', 'pundit'],
+  { id: 'contrarian', name: 'Contrarian', agent: 'pundit', provider: 'xai', aliases: ['grok', 'pundit'], voice: { gender: 'male', age: 'older', pitch: 0.82, rate: 0.95 },
     viewpoint: 'A provocative outsider. You challenge the consensus, name who benefits from the hype, and argue the unpopular side when it has merit.' },
-  { id: 'archivist', name: 'Archivist', agent: 'archivist', provider: 'anthropic', aliases: ['researcher'],
+  { id: 'archivist', name: 'Archivist', agent: 'archivist', provider: 'anthropic', aliases: ['researcher'], voice: { gender: 'female', age: 'older', pitch: 0.88, rate: 0.9 },
     viewpoint: 'A research historian. You connect the topic to prior papers, earlier waves of similar ideas, and what the literature already settled.' },
-  { id: 'synthesizer', name: 'Synthesizer', agent: 'synthesizer', provider: 'anthropic', aliases: ['moderator'],
+  { id: 'synthesizer', name: 'Synthesizer', agent: 'synthesizer', provider: 'anthropic', aliases: ['moderator'], voice: { gender: 'female', age: 'young', pitch: 1.08, rate: 1.05 },
     viewpoint: 'The moderator. You find common ground, sharpen the real disagreement, and steer the group toward a useful conclusion.' },
 ];
+
+// MARK: Panelist voices
+
+// Browsers don't expose a voice's gender, so read it from the name. Covers Apple (macOS/iOS), Chrome's Google
+// voices, Microsoft (Windows, Edge's natural voices) and eSpeak on Linux ("+f3"/"+m3" variants).
+const FEMALE_VOICES = /\b(female|woman|samantha|victoria|karen|moira|tessa|fiona|veena|serena|kate|susan|allison|ava|zoe|nicky|martha|catherine|joelle|noelle|kathy|vicki|princess|agnes|zira|aria|jenny|sonia|libby|michelle|emma|natasha|clara|hazel|susan|heera|neerja|linda|eva|mia|sara|jane|nancy|amber|ashley|cora|elizabeth|monica|ana)\b|\+f\d/i;
+const MALE_VOICES = /\b(male|man|alex|daniel|fred|rishi|arthur|oliver|aaron|tom|evan|nathan|lee|gordon|ralph|bruce|junior|albert|david|mark|guy|ryan|christopher|eric|brian|andrew|roger|steffan|thomas|william|george|james|liam|davis|tony|jason|prabhat|ravi|connor|mitchell|reed|rocko|eddy)\b|\+m\d/i;
+// Novelty, robotic and child voices never suit a meeting.
+const UNSUITED_VOICES = /\b(grandma|grandpa|flo|eddy|fred|reed|rocko|sandy|shelley|bad news|good news|bells|boing|bubbles|cellos|jester|organ|superstar|trinoids|whisper|wobble|zarvox|albert|bahh|junior|ana|kathy|princess|ralph)\b/i;
+
+const quality = (v) => (/natural|premium|enhanced|neural/i.test(v.name) ? 2 : /\+[fm]\d|espeak/i.test(v.name) || /^english \(/i.test(v.name) ? 0 : 1);
+
+export function voiceGender(name) {
+  // "Female"/"Male" written out wins over a first name ("Google UK English Male").
+  if (/\bfemale\b/i.test(name)) return 'female';
+  if (/\bmale\b/i.test(name)) return 'male';
+  if (/^google us english$/i.test(name.trim())) return 'female';
+  if (FEMALE_VOICES.test(name)) return 'female';
+  if (MALE_VOICES.test(name)) return 'male';
+  return null;
+}
+
+/**
+ * Picks a distinct voice for each panelist that matches the gender of their portrait.
+ * `voices` are the browser's SpeechSynthesisVoice list; returns { panelistId: { voice, pitch, rate } }.
+ * When a device has no voice of the needed gender, pitch is pushed further to approximate it.
+ */
+export function castVoices(voices) {
+  const english = voices.filter((v) => v.lang?.toLowerCase().startsWith('en') && !UNSUITED_VOICES.test(v.name));
+  const seen = new Set();
+  const distinct = english.filter((v) => !seen.has(v.name) && seen.add(v.name))
+    // Natural-sounding first; robotic eSpeak voices last; then installed before network voices.
+    .sort((a, b) => quality(b) - quality(a) || b.localService - a.localService);
+  // Robotic voices only when a gender has nothing better: reusing a good voice (at another pitch) beats them.
+  const poolOf = (g) => { const all = distinct.filter((v) => voiceGender(v.name) === g); const good = all.filter((v) => quality(v) > 0); return good.length ? good : all; };
+  const pools = { female: poolOf('female'), male: poolOf('male') };
+  const used = { female: 0, male: 0 };
+  const cast = {};
+  for (const p of PANELISTS) {
+    const { gender, pitch, rate } = p.voice;
+    const pool = pools[gender];
+    if (pool.length) {
+      // Distinct voices while they last; after that, pitch and rate keep the voices apart.
+      cast[p.id] = { voice: pool[used[gender]++ % pool.length], pitch, rate };
+    } else {
+      // No voice of this gender here: use any voice and shift pitch towards the right register.
+      const fallback = distinct.find((v) => !voiceGender(v.name)) ?? distinct[0] ?? null;
+      cast[p.id] = { voice: fallback, pitch: +(gender === 'male' ? pitch * 0.8 : pitch * 1.2).toFixed(2), rate };
+    }
+  }
+  return cast;
+}
 
 export const VOICE_ROLES = ['entrepreneur', 'researcher', 'engineer', 'investor', 'builder'];
 const voices = (role, ...handles) => handles.map((handle) => ({ handle, role }));

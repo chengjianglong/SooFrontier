@@ -57,7 +57,8 @@ Every morning at 6:00 am Pacific the harvesters run in parallel and publish as t
 
 - **Eleven agents.** Nine harvesters pull from arXiv, Hugging Face, GitHub, lab and company blogs, product news and X (through Grok search). The Skeptic rates each story and flags hype, and the Synthesizer writes each desk's digest.
 - **Five desks.** Brief, Research, Productions, Opinions and Brainstorm, each with lanes, a filter, a digest you can listen to, and Previous / Next paging.
-- **A structured read of every story.** A quick read (contributions, findings, results, limitations) and a deeper analysis with takeaways, mathematical analysis and opportunities, plus key figures from the paper.
+- **The Frontier Council.** Five members (Skeptic, Builder, Contrarian, Open-Weights Advocate and Edge Engineer) debate a story on your local models, at no plan or API cost. Each seat can have its own model; the Edge Engineer is played by [LiquidAI LFM3-1.7B](https://huggingface.co/LiquidAI/LFM3-1.7B) (`ollama pull hf.co/LiquidAI/LFM3-1.7B-GGUF:BF16`). After opening statements they rebut each other by name in rounds until they all hold the same verdict (read, try, wait or skip), up to four rounds, then a moderator rules.
+- **A structured read of every story.** A quick read (contributions, findings, results, limitations, opportunities), plus key figures from the paper.
 - **Brainstorm.** A group chat or a video meeting with five model panelists (Skeptic, Builder, Contrarian, Archivist, Synthesizer) whose faces speak their answers, rendered on device with MediaPipe face landmarks.
 <p align="center">
   <img src="design/brainstorm-faces.png" alt="The five Brainstorm panelists: Skeptic, Builder, Contrarian, Archivist and Synthesizer" width="720">
@@ -67,7 +68,27 @@ Every morning at 6:00 am Pacific the harvesters run in parallel and publish as t
 
 ## Models
 
-Each provider runs either on a plan you already pay for, through its official CLI on the Mac (`claude`, `codex`, `grok`), or on an API key. iPhone and iPad can pair with a Mac on the same network and use its plans. With no connection, Gemma runs on device through [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM).
+Each provider runs either on a plan you already pay for, through its official CLI on the Mac (`claude`, `codex`, `grok`), or on an API key. iPhone and iPad can pair with a Mac on the same network and use its plans.
+
+### Local models on your own GPU
+
+Open-weight models can run on your own machine, such as an NVIDIA DGX Spark / GB10 with 128 GB, through [Ollama](https://ollama.com). They write whenever Claude, GPT or Grok can't be reached, or answer first when **Prefer local models** is on. Live X and web research always goes to Grok.
+
+| Role | Default | Why |
+| --- | --- | --- |
+| Main model: brief, analyses, Council rulings | `gpt-oss:120b` | The strongest open model that fits in 128 GB (about 65 GB) |
+| Fast model: quick reads | `qwen3.6:35b-a3b` | Mixture of experts with 3B active parameters, so it's quick on the GB10's memory bandwidth |
+
+On the GPU box:
+
+```bash
+ollama pull gpt-oss:120b
+ollama pull qwen3.6:35b-a3b
+# Listen beyond localhost so iPhone, iPad and the Mac can reach it
+sudo systemctl edit ollama   # add: Environment="OLLAMA_HOST=0.0.0.0:11434"
+```
+
+In **Settings → Local models**, enter the server's address: its LAN IP (`http://192.168.1.20:11434`), its `.local` name, or its IP on a VPN like Tailscale (`http://100.x.y.z:11434`) to use it away from home. iOS allows plain HTTP only to local names and IP addresses; for a full hostname such as a Tailscale MagicDNS name, serve it over HTTPS (`tailscale serve --bg 11434`). Ollama has no sign-in, so keep it on your LAN or VPN and don't forward the port to the internet.
 
 ## Building the apps
 
@@ -94,14 +115,14 @@ Then open http://localhost:5180.
 
 | A story page | Opinions |
 | :---: | :---: |
-| ![A paper's story page with Analyze, Council and Listen, and the quick read](docs/media/web-story.png) | ![Voices on X, each tagged with the Skeptic's verdict](docs/media/web-opinions.png) |
+| ![A paper's story page with Council and Listen, and the quick read](docs/media/web-story.png) | ![Voices on X, each tagged with the Skeptic's verdict](docs/media/web-opinions.png) |
 
 ## Layout
 
 | Path | What's there |
 | --- | --- |
 | `SooFrontier/Agents` | Harvesters and thinkers |
-| `SooFrontier/Services` | Feeds, model access, CLI runner, Mac bridge, on-device Gemma |
+| `SooFrontier/Services` | Feeds, model access, CLI runner, Mac bridge, local model server |
 | `SooFrontier/Store` | App state, daily refresh, appearance |
 | `SooFrontier/Views`, `Brainstorm` | The desks, story pages and the meeting room |
 | `SooFrontier/Resources` | The video meeting stage and panelist portraits |

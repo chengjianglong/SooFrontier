@@ -22,7 +22,8 @@ final class BrainstormVoice: NSObject {
     private var tapInstalled = false
     private(set) var isListening = false
     private var pending = 0
-    private var voices: [String: AVSpeechSynthesisVoice] = [:]
+    /// Each panelist's voice and its pitch and pace, chosen once to fit their portrait.
+    private var cast: [String: (voice: AVSpeechSynthesisVoice?, pitch: Float, rate: Float)] = [:]
     /// Which panelist each queued utterance belongs to.
     private var owners: [ObjectIdentifier: String] = [:]
     /// The panelist whose voice is playing now (drives the video-meeting faces).
@@ -151,8 +152,10 @@ final class BrainstormVoice: NSObject {
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
         let u = AVSpeechUtterance(string: text)
-        u.voice = voice(for: panelist)
-        u.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+        let c = castMember(panelist)
+        u.voice = c.voice
+        u.pitchMultiplier = c.pitch
+        u.rate = AVSpeechUtteranceDefaultSpeechRate * c.rate
         u.postUtteranceDelay = 0.25
         pending += 1
         owners[ObjectIdentifier(u)] = panelist
@@ -195,20 +198,43 @@ final class BrainstormVoice: NSObject {
         return mouthNow
     }
 
-    /// A different English voice for each panelist, preferring the best quality installed.
-    private func voice(for panelist: String) -> AVSpeechSynthesisVoice? {
-        if let v = voices[panelist] { return v }
+    /// Novelty, robotic and child voices never suit a meeting.
+    private static let unsuited: Set<String> = [
+        "Albert", "Bad News", "Bahh", "Bells", "Boing", "Bubbles", "Cellos", "Eddy", "Flo", "Fred", "Good News",
+        "Grandma", "Grandpa", "Jester", "Junior", "Kathy", "Organ", "Princess", "Ralph", "Reed", "Rocko", "Sandy",
+        "Shelley", "Superstar", "Trinoids", "Whisper", "Wobble", "Zarvox",
+    ]
+
+    private func castMember(_ panelist: String) -> (voice: AVSpeechSynthesisVoice?, pitch: Float, rate: Float) {
+        if cast.isEmpty { castPanel() }
+        return cast[panelist] ?? (AVSpeechSynthesisVoice(language: "en-US"), 1, 1.05)
+    }
+
+    /// Gives each panelist a distinct English voice of their portrait's gender, best quality first.
+    /// When there are more panelists than voices of a gender, voices repeat and pitch and pace keep them apart;
+    /// when there are none, another voice is pitched towards the right register.
+    private func castPanel() {
+        var seen = Set<String>()
         let english = AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("en") }
-            .sorted { ($0.quality.rawValue, $0.identifier) > ($1.quality.rawValue, $1.identifier) }
-        let order = Panelist.all.map(\.id)
-        let index = order.firstIndex(of: panelist) ?? 0
-        // Spread panelists across distinct voices (by name), best quality first.
-        var seen = Set<String>(), distinct: [AVSpeechSynthesisVoice] = []
-        for v in english where seen.insert(v.name).inserted { distinct.append(v) }
-        let v = distinct.isEmpty ? AVSpeechSynthesisVoice(language: "en-US") : distinct[index % distinct.count]
-        voices[panelist] = v
-        return v
+            .filter { v in !Self.unsuited.contains { v.name.hasPrefix($0) } && !v.identifier.contains("eloquence") }
+            .sorted { ($0.quality.rawValue, $0.language == "en-US" ? 1 : 0, $0.identifier) > ($1.quality.rawValue, $1.language == "en-US" ? 1 : 0, $1.identifier) }
+            .filter { seen.insert($0.name).inserted }
+        let female = english.filter { $0.gender == .female }
+        let male = english.filter { $0.gender == .male }
+        var used: [Panelist.VoiceProfile.Gender: Int] = [:]
+        for p in Panelist.all {
+            let profile = p.voice
+            let pool = profile.gender == .female ? female : male
+            if !pool.isEmpty {
+                let i = used[profile.gender, default: 0]
+                used[profile.gender] = i + 1
+                cast[p.id] = (pool[i % pool.count], profile.pitch, profile.rate)
+            } else {
+                let other = english.first ?? AVSpeechSynthesisVoice(language: "en-US")
+                cast[p.id] = (other, profile.gender == .male ? profile.pitch * 0.8 : profile.pitch * 1.2, profile.rate)
+            }
+        }
     }
 }
 

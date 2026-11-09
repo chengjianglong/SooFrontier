@@ -62,15 +62,6 @@ enum Provider: String, CaseIterable, Codable, Identifiable, Sendable {
         case .xai: "xmark"
         }
     }
-
-    /// The persona each provider plays on the Frontier Council.
-    var councilSeat: (title: String, brief: String) {
-        switch self {
-        case .anthropic: ("The Skeptic", "Rigorous methodologist. Hunt for missing baselines, eval leakage, cherry-picked results, and unstated limitations.")
-        case .openai: ("The Builder", "Pragmatic engineer. Judge what this enables today, what it costs to run, and how you'd actually ship with it.")
-        case .xai: ("The Contrarian", "Provocative outsider. Challenge the consensus narrative, name who benefits from the hype, and say what everyone is missing.")
-        }
-    }
 }
 
 struct LLMError: LocalizedError {
@@ -89,36 +80,43 @@ struct LLMClient: Sendable {
     /// On iPhone/iPad, the Mac (Bonjour name) that runs subscription requests, plus its pairing code.
     var bridgeService: String = ""
     var bridgeCode: String = ""
-    /// Always use on-device Gemma (no provider is set up on this device).
-    var gemmaOnly = false
+    /// Always use the local model server (no provider is set up on this device).
+    var localOnly = false
+    /// A short job (quick reads): the local fallback uses its fast model.
+    var fast = false
 
-    static func gemma() -> LLMClient { LLMClient(provider: .anthropic, apiKey: "", model: "gemma-4-E2B", gemmaOnly: true) }
+    static func local() -> LLMClient { LLMClient(provider: .anthropic, apiKey: "", model: LocalModels.config.model, localOnly: true) }
 
     var label: String {
-        if gemmaOnly { return Self.gemmaLabel }
+        if localOnly { return LocalModels.label(fast ? LocalModels.config.fastModel : LocalModels.config.model) }
         return mode == .subscription
             ? "\(provider.family) · \(provider.planName.components(separatedBy: " ").last ?? "plan") plan\(cliModel.isEmpty ? "" : " · \(cliModel)")"
             : "\(provider.family) · \(model)"
     }
 
-    static let gemmaLabel = "Gemma 4 · on device"
-
     func complete(system: String, prompt: String, maxTokens: Int = 8000, research: Bool = false) async throws -> String {
         try await completeLabeled(system: system, prompt: prompt, maxTokens: maxTokens, research: research).text
     }
 
-    /// Answers with this provider, or with on-device Gemma when the provider can't be reached.
-    /// Returns which model actually wrote the text. Research (live X/web search) never falls back.
+    /// Answers with this provider, or with the local model server when the provider can't be reached
+    /// (or first, when "Prefer local models" is on). Returns which model actually wrote the text.
+    /// Research (live X/web search) always goes to the provider.
     func completeLabeled(system: String, prompt: String, maxTokens: Int = 8000,
                          research: Bool = false) async throws -> (text: String, label: String) {
-        let canFallBack = !research && GemmaModel.installedURL() != nil
-        if canFallBack && (gemmaOnly || !Connectivity.shared.isOnline) {
-            return (try await OnDeviceGemma.shared.complete(system: system, prompt: prompt), Self.gemmaLabel)
+        let local = LocalModels.config
+        let canUseLocal = !research && local.isConfigured
+        if canUseLocal && (localOnly || local.prefer || !Connectivity.shared.isOnline) {
+            do {
+                return try await LocalModels.complete(system: system, prompt: prompt, maxTokens: maxTokens, fast: fast)
+            } catch where !localOnly && Connectivity.isUnreachable(error) {
+                // The GPU box is off or out of reach: let the provider answer instead.
+            }
         }
+        if localOnly { throw LLMError(message: "Connect a model in Settings, or set up a local model server.") }
         do {
             return (try await remote(system: system, prompt: prompt, maxTokens: maxTokens, research: research), label)
-        } catch where canFallBack && Connectivity.isUnreachable(error) {
-            return (try await OnDeviceGemma.shared.complete(system: system, prompt: prompt), Self.gemmaLabel)
+        } catch where canUseLocal && !local.prefer && Connectivity.isUnreachable(error) {
+            return try await LocalModels.complete(system: system, prompt: prompt, maxTokens: maxTokens, fast: fast)
         }
     }
 

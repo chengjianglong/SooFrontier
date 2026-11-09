@@ -22,11 +22,11 @@ struct ItemDetailView: View {
     private var previous: FrontierItem? { index.flatMap { $0 > 0 ? sequence[$0 - 1] : nil } }
     private var next: FrontierItem? { index.flatMap { $0 + 1 < sequence.count ? sequence[$0 + 1] : nil } }
 
-    @State private var critique: String?
-    @State private var critiqueBy: String?
-    @State private var critiquing = false
     @State private var council: [CouncilAgent.Turn] = []
     @State private var ruling: String?
+    @State private var rulingBy: String?
+    @State private var outcome: CouncilAgent.Outcome?
+    @State private var speaking: (seat: String, round: Int)?
     @State private var convening = false
     @State private var error: String?
     @State private var paper: PaperContent?
@@ -58,7 +58,7 @@ struct ItemDetailView: View {
             if let id, id != item.id, let target = sequence.first(where: { $0.id == id }) { move(to: target, followingReader: true) }
         }
         .task(id: item.id) {
-            // Read the paper (full text and figures) in the background for figures and Analyze.
+            // Read the paper (full text and figures) in the background for its key figures and the quick read.
             if [.papers, .reports].contains(item.category) || PaperReader.arxivID(item.url) != nil {
                 paper = await PaperReader.read(item)
             }
@@ -140,10 +140,6 @@ struct ItemDetailView: View {
     private var actions: some View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
-                Button { Task { await runCritique() } } label: {
-                    ActionLabel(title: critiquing ? "Analyzing…" : (critique == nil ? "Analyze" : "Re-analyze"), symbol: "eyeglasses")
-                }
-                .disabled(critiquing)
                 Button { Task { await runCouncil() } } label: {
                     ActionLabel(title: convening ? "In session…" : "Council", symbol: "person.3")
                 }
@@ -160,8 +156,6 @@ struct ItemDetailView: View {
     }
 
     // MARK: TL;DR · Takeaways · Potential opportunities
-
-    private var analysis: Structure.Parsed? { critique.flatMap(Structure.parse) }
 
     /// Takeaways for the quick read, built from the story's own facts so the section is never empty.
     private var quickTakeaways: [String] {
@@ -237,33 +231,17 @@ struct ItemDetailView: View {
 
     @ViewBuilder private var structured: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if critiquing {
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text("Writing a detailed analysis…").foregroundStyle(.secondary)
-                }
-                .font(.callout)
-            }
-            if analysis != nil, let critiqueBy {
-                Text("Analysis by \(critiqueBy)").eyebrow()
-            } else if critique == nil {
-                Text("Quick read · tap Analyze for the full analysis with math").eyebrow()
-            }
-            if let critique, analysis == nil {
-                // The model ignored the structure; show what it wrote rather than nothing.
-                MarkdownText(text: critique, serif: true)
-            } else {
-                let a = item.assessment
-                StructuredSections(
-                    tldr: Text(markdown: analysis?.tldr ?? quickTLDR),
-                    takeaways: (analysis?.takeaways ?? quickTakeaways).map { Text(markdown: $0) },
-                    math: analysis?.math ?? [],
-                    opportunities: (analysis?.opportunities ?? quickOpportunities).map { Text(markdown: $0) },
-                    opportunitiesLoading: analysis == nil && ideasLoading && quickOpportunities.isEmpty
-                ) {
-                    if let a { SignalMeter(assessment: a).padding(.bottom, 4) }
-                    if let figs = paper?.keyFigures(), !figs.isEmpty { KeyFigures(figures: figs).padding(.bottom, 6) }
-                }
+            Text("Quick read").eyebrow()
+            let a = item.assessment
+            StructuredSections(
+                tldr: Text(markdown: quickTLDR),
+                takeaways: quickTakeaways.map { Text(markdown: $0) },
+                math: [],
+                opportunities: quickOpportunities.map { Text(markdown: $0) },
+                opportunitiesLoading: ideasLoading && quickOpportunities.isEmpty
+            ) {
+                if let a { SignalMeter(assessment: a).padding(.bottom, 4) }
+                if let figs = paper?.keyFigures(), !figs.isEmpty { KeyFigures(figures: figs).padding(.bottom, 6) }
             }
         }
     }
@@ -274,36 +252,72 @@ struct ItemDetailView: View {
         if convening || !council.isEmpty {
             VStack(alignment: .leading, spacing: 20) {
                 SectionRule(title: "The Frontier Council")
-                ForEach(Provider.allCases.filter { store.configuredProviders.contains($0) }) { p in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            Text(p.councilSeat.title).eyebrow(.primary)
-                            Text("· \(p.family)").eyebrow()
-                        }
-                        if let t = council.first(where: { $0.provider == p }) {
-                            if t.failed { Text(t.text).font(.callout).foregroundStyle(.red) }
-                            else { MarkdownText(text: t.text, serif: true) }
-                        } else {
-                            HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Deliberating…").foregroundStyle(.secondary) }
-                                .font(.callout)
+                Text("\(CouncilAgent.seats.count) members debate on your local models until they agree, up to \(CouncilAgent.maxRounds) rounds.")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(councilRounds, id: \.self) { round in
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(round == 1 ? "Round 1 · Opening statements" : "Round \(round) · Rebuttals").eyebrow(Theme.accent)
+                        ForEach(council.filter { $0.round == round }) { t in councilTurn(t) }
+                        if let speaking, speaking.round == round {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text("\(CouncilAgent.seat(speaking.seat).title) is speaking…").foregroundStyle(.secondary)
+                            }
+                            .font(.callout)
                         }
                     }
-                    Divider()
+                }
+                if let outcome {
+                    HStack(spacing: 8) {
+                        if outcome.agreed {
+                            Text("Agreed after \(outcome.rounds) rounds:").font(.callout.weight(.semibold))
+                            if let v = outcome.leading { VerdictChip(verdict: v) }
+                        } else {
+                            Text("No full agreement after \(outcome.rounds) rounds:").font(.callout.weight(.semibold))
+                            Text(outcome.tally).font(.callout)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(outcome.agreed ? Color.green : Color.secondary.opacity(0.3)))
                 }
                 if let ruling, !ruling.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("The ruling").eyebrow(Theme.accent)
+                        Text(rulingBy.map { "The ruling · \($0)" } ?? "The ruling").eyebrow(Theme.accent)
                         StructuredText(text: ruling)
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
                     .overlay(alignment: .leading) { Rectangle().fill(Theme.accent).frame(width: 3) }
-                } else if convening && council.count == store.configuredProviders.count {
+                } else if convening && outcome != nil {
                     HStack(spacing: 8) { ProgressView().controlSize(.small); Text("The moderator is ruling…").foregroundStyle(.secondary) }
                         .font(.callout)
                 }
             }
+        }
+    }
+
+    private var councilRounds: [Int] {
+        var rounds = Array(Set(council.map(\.round))).sorted()
+        if let speaking, !rounds.contains(speaking.round) { rounds.append(speaking.round) }
+        return rounds
+    }
+
+    private func councilTurn(_ t: CouncilAgent.Turn) -> some View {
+        let previous = council.first { $0.seat == t.seat && $0.round == t.round - 1 }
+        let changed = previous?.verdict != nil && t.verdict != nil && previous?.verdict != t.verdict
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(CouncilAgent.seat(t.seat).title).eyebrow(.primary)
+                if !t.model.isEmpty { Text("· \(LocalModels.shortName(t.model))").eyebrow() }
+                if let v = t.verdict { VerdictChip(verdict: v) }
+                if changed, let p = previous?.verdict { Text("changed from \(p)").font(.caption).foregroundStyle(.secondary) }
+                else if t.kept { Text("holds").font(.caption).foregroundStyle(.secondary) }
+            }
+            if t.failed { Text(t.text).font(.callout).foregroundStyle(.red) }
+            else { MarkdownText(text: t.text, serif: true) }
+            Divider()
         }
     }
 
@@ -338,13 +352,8 @@ struct ItemDetailView: View {
     /// Starts reading here and on through the list. The reader owns the playlist, so it keeps going
     /// with the screen locked, in the background, or with no network or Mac bridge.
     private func listen() {
-        let a = analysis
-        // This page's fuller script (analysis, figures-aware takeaways); later stories use on-device data.
-        let here = Reader.script(
-            tldr: a?.tldr ?? quickTLDR,
-            takeaways: a?.takeaways ?? quickTakeaways,
-            math: a?.math ?? [],
-            opportunities: a?.opportunities ?? quickOpportunities)
+        // This page's fuller script (figures-aware takeaways); later stories use on-device data.
+        let here = Reader.script(tldr: quickTLDR, takeaways: quickTakeaways, math: [], opportunities: quickOpportunities)
         let list = index == nil ? [item] : sequence
         let id = item.id
         reader.play(list, from: index ?? 0) { [store] it in
@@ -356,31 +365,27 @@ struct ItemDetailView: View {
         guard let target else { return }
         // Moving by hand while listening carries the reading along.
         if readingThis && !followingReader { reader.jump(to: target.id) }
-        critique = nil; critiqueBy = nil; critiquing = false; paper = nil; paperLoaded = false; quick = nil; ideasLoading = false
-        council = []; ruling = nil; convening = false; error = nil
+        paper = nil; paperLoaded = false; quick = nil; ideasLoading = false
+        council = []; ruling = nil; rulingBy = nil; outcome = nil; speaking = nil; convening = false; error = nil
         if let selection { selection.wrappedValue = target } else { moved = target }
     }
 
     // MARK: Agents
 
-    private func runCritique() async {
-        let id = item.id
-        critiquing = true; error = nil
-        defer { if item.id == id { critiquing = false } }
-        do {
-            if !paperLoaded, [.papers, .reports].contains(item.category) { paper = await PaperReader.read(item) }
-            let result = try await store.critique(item, content: paper)
-            if item.id == id { (critique, critiqueBy) = result }
-        } catch { if item.id == id { self.error = error.localizedDescription } }
-    }
-
     private func runCouncil() async {
         let id = item.id
-        convening = true; error = nil; council = []; ruling = nil
-        defer { if item.id == id { convening = false } }
+        convening = true; error = nil; council = []; ruling = nil; rulingBy = nil; outcome = nil; speaking = nil
+        defer { if item.id == id { convening = false; speaking = nil } }
         do {
-            let r = try await store.convene(item) { turn in if item.id == id { council.append(turn) } }
-            if item.id == id { ruling = r }
+            let r = try await store.convene(item) { event in
+                guard item.id == id else { return }
+                switch event {
+                case .speaking(let seat, let round): speaking = (seat, round)
+                case .turn(let turn): council.append(turn); speaking = nil
+                case .outcome(let o): outcome = o
+                }
+            }
+            if item.id == id { (ruling, rulingBy) = r }
         } catch { if item.id == id { self.error = error.localizedDescription } }
     }
 }
@@ -441,5 +446,28 @@ private struct KeyFigures: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { zoomed = nil } } }
             }
         }
+    }
+}
+
+/// A council member's verdict: read, try, wait or skip.
+private struct VerdictChip: View {
+    var verdict: String
+
+    private var color: Color {
+        switch verdict {
+        case "read": .blue
+        case "try": .green
+        case "wait": .orange
+        default: .red
+        }
+    }
+
+    var body: some View {
+        Text(verdict.uppercased())
+            .font(.caption2.weight(.semibold))
+            .tracking(0.5)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8).padding(.vertical, 1)
+            .overlay(Capsule().stroke(color))
     }
 }
